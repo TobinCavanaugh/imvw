@@ -1,0 +1,71 @@
+{
+  "settings": {
+    "padding": 10.0,
+    "on_top": true,
+    "undecorated": false,
+    "rotation_speed": 1.0,
+    "zoom_speed": 1.0,
+    "lerpSpeed_pan" : 30.0,
+    "lerpSpeed_zoom" : 20.0,
+    "lerpSpeed_rotate": 10.0,
+    "max_window_w": 3.0,
+    "max_window_h": 3.0,
+    "min_window_w": 10.0,
+    "min_window_h": 10.0,
+    "bg_color": {
+      "r": 0,
+      "g": 0,
+      "b": 0,
+      "a": 128
+    }
+  },
+  "actions": [
+    {
+      "func": "exit",
+      "press": "W",
+      "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "exit",
+      "press": "KEY_W",
+      "modifier": "KEY_RIGHT_CONTROL"
+    },
+    {
+      "func": "exit",
+      "press": "KEY_Q"
+    },
+    {
+      "func": "exit",
+      "press": "KEY_ESCAPE"
+    },
+    {
+      "func": "Camera_Home_ResetZoom",
+      "press": "KEY_F"
+    },
+    {
+      "func": "Reload",
+      "press": "KEY_R",
+      "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "Camera_Pan",
+      "button": "MOUSE_BUTTON_LEFT"
+    },
+    {
+      "func": "Camera_Pan",
+      "button": "BUTTON_MIDDLE"
+    },
+    {
+      "func": "Camera_Pan",
+      "hold": "G"
+    },
+    {
+      "func": "Rotate_By_Mouse",
+      "hold": "R"
+    },
+    {
+      "func": "Toggle_Trilinear_Filtering",
+      "press": "B"
+    }
+  ]
+}
