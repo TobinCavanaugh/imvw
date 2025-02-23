@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <external/stb_image_write.h>
+#include <external/stb_image_write.h>
 
 #include "raymath.h"
 #include "GLFW/glfw3.h"
@@ -78,14 +80,12 @@ settings_t settings = {0};
 v2f CalculateWindowSize() {
     f32 aspect_ratio = (f32) current_texture.width / (f32) current_texture.height;
 
-    //TODO add json field for 3.0f and 10.0f
-
     f32 max_w = current_texture.width;
     f32 max_h = current_texture.height;
 
     // Maximum size
-    f32 sw = (f32) (GetMonitorWidth(GetCurrentMonitor()) / 3.0f);
-    f32 sh = (f32) (GetMonitorHeight(GetCurrentMonitor()) / 3.0f);
+    f32 sw = (f32) (settings.max_window_w);
+    f32 sh = (f32) (settings.max_window_h);
     // If its too large for the monitor
     if (current_texture.width >= sw || current_texture.height >= sh) {
         if (current_texture.width >= current_texture.height) {
@@ -98,8 +98,8 @@ v2f CalculateWindowSize() {
     }
 
     // Minimum size
-    f32 mw = (f32) (GetMonitorWidth(GetCurrentMonitor()) / 10.0f);
-    f32 mh = (f32) (GetMonitorHeight(GetCurrentMonitor()) / 10.0f);
+    f32 mw = (f32) (settings.min_window_w);
+    f32 mh = (f32) (settings.min_window_h);
     // Handle minimum size case
     if (current_texture.width <= mw || current_texture.height <= mh) {
         if (current_texture.width >= current_texture.height) {
@@ -225,6 +225,26 @@ u0 Camera_Pan() {
     target_camera.target = mwp;
 }
 
+u0 Copy_To_Clipboard() {
+    //TODO BROKEN
+    fprintf(stderr, "Copy to clipboard not properly implemented.");
+    return;
+    OpenClipboard(GetWindowHandle());
+
+    Image img = LoadImageFromTexture(current_texture);
+
+    if (img.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+        ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    }
+
+    HBITMAP hbp = LoadBitmap(GetWindowHandle(), current_path);
+    SetClipboardData(CF_BITMAP, &hbp);
+
+    CloseClipboard();
+
+    UnloadImage(img);
+}
+
 LONG_PTR default_wind_proc;
 
 LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -236,14 +256,46 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 HMENU hMenu = CreatePopupMenu();
 
                 AppendMenu(hMenu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, 1, "Keep on top");
-                AppendMenu(hMenu, MF_STRING, 2, "Undecorate");
+                AppendMenu(hMenu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, 2, "Undecorated");
+                AppendMenu(hMenu, MF_STRING, 3, "Focus");
+                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+
+                // AppendMenu(hMenu, MF_STRING, SC_MOVE, "Move");
+
+                AppendMenu(hMenu, MF_STRING, SC_MINIMIZE, "Minimize");
+
+                if (IsWindowMaximized()) {
+                    AppendMenu(hMenu, MF_STRING, SC_RESTORE, "Restore");
+                } else {
+                    AppendMenu(hMenu, MF_STRING, SC_MAXIMIZE, "Maximize");
+                }
                 AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
                 AppendMenu(hMenu, MF_STRING, SC_CLOSE, "Close");
 
                 // Show the context menu
                 POINT pt;
                 GetCursorPos(&pt);
-                TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+                i32 result = TrackPopupMenu(hMenu, TPM_CENTERALIGN | TPM_HORPOSANIMATION | TPM_RETURNCMD, pt.x, pt.y, 0,
+                                            hwnd, NULL);
+
+
+                // If we dont select an option, fix the mouse delta still being
+                // applied to the camera move. Doesn't work quite right if you
+                // scroll, then right click, then click away. This could be
+                // fixed by making a custom input struct that we can control
+                // with more precision.
+                if (result == 0) {
+                    POINT p;
+                    GetCursorPos(&p);
+
+                    ScreenToClient(hwnd, &p);
+                    SetMousePosition(p.x, p.y);
+                    SetMousePosition(p.x, p.y);
+                } else {
+                    // TPM_RETURNCMD doesnt send the message, so we have to
+                    SendMessage(GetWindowHandle(), WM_COMMAND, result, 0);
+                }
+                // Nothing selected
                 DestroyMenu(hMenu);
             }
             return 0;
@@ -255,11 +307,28 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 // settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
                     break;
                 case 2: // Undecorate
-                    // LONG style = GetWindowLong(hwnd, GWL_STYLE);
-                    // style &= ~(WS_CAPTION | WS_THICKFRAME); // Remove title bar and borders
-                    // SetWindowLong(hwnd, GWL_STYLE, style);
-                    // SetWindowPos(hwnd, NULL, 0, 0, 800, 600, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
                     settings.undecorated = !settings.undecorated;
+                    break;
+                case 3:
+                    Camera_Home_ResetZoom();
+                    break;
+                case SC_MOVE:
+                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
+                    break;
+                case SC_MINIMIZE:
+                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
+                    break;
+                case SC_RESTORE:
+                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
+                    break;
+                case SC_MAXIMIZE:
+                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+                    break;
+                case SC_CLOSE:
+                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
+                    break;
+                default:
+                    printf("/////////");
                     break;
             }
             return 0;
@@ -281,6 +350,7 @@ int main(char argc, char **argv) {
     flut_add(Toggle_Trilinear_Filtering);
     flut_add(Rotate_By_Mouse);
     flut_add(Rotate_By_Scroll);
+    flut_add(Copy_To_Clipboard);
 
     target_camera = real_camera;
 
@@ -351,6 +421,13 @@ int main(char argc, char **argv) {
     u8 maximized_state = 0;
 
     i32 index = 0;
+
+    // 0b0000
+    // 0b0001 ^ UP
+    // 0b0010 > RIGHT
+    // 0b0100 V DOWN
+    // 0b1000 < LEFT
+    u8 is_resizing = 0;
 
 
     // Program loop
@@ -436,6 +513,12 @@ int main(char argc, char **argv) {
             Camera_Home_ResetZoom();
         }
 
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            SendMessage(GetWindowHandle(), WM_CONTEXTMENU, GetWindowHandle(), 0);
+
+            goto RENDER;
+        }
+
         if (IsKeyPressed(KEY_LEFT)) {
             --index;
             Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
@@ -455,6 +538,52 @@ int main(char argc, char **argv) {
                 SetWindowPosition((i32) round(pos.x), (i32) round(pos.y));
             }
         }
+
+        // if (IsWindowState(FLAG_WINDOW_UNDECORATED)) {
+        //     POINT p;
+        //     GetCursorPos(&p);
+        //
+        //     //~10 pixels epsilon
+        //     RECT rec;
+        //     GetWindowRect(GetWindowHandle(), &rec);
+        //
+        //     SetMouseCursor(MOUSE_CURSOR_ARROW);
+        //
+        //     //(1) bottom side
+        //     if (abs(p.y - rec.top) < 10 && (p.x > rec.left && p.x < rec.right)) {
+        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_NS);
+        //         //Resize horizontal
+        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 1)) : 0;
+        //     }
+        //     //(2) right side
+        //     if (abs(p.x - rec.right) < 10 && (p.y > rec.top && p.y < rec.bottom)) {
+        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_EW);
+        //         //Resize horizontal
+        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 2)) : 0;
+        //     }
+        //     //(3) bottom side
+        //     if (abs(p.y - rec.bottom) < 10 && (p.x > rec.left && p.x < rec.right)) {
+        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_NS);
+        //         //Resize horizontal
+        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 3)) : 0;
+        //     }
+        //     //(4) left side
+        //     if (abs(p.x - rec.left) < 10 && (p.y > rec.top && p.y < rec.bottom)) {
+        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_EW);
+        //         //Resize horizontal
+        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 4)) : 0;
+        //     }
+        // }
+
+
+        // if (is_resizing) {
+        //     if (is_resizing & (1 << 2)) {
+        //         SetWindowSize(max(GetScreenWidth() + GetMouseDelta().x, settings.min_window_w), GetScreenHeight());
+        //     }
+        //     if (is_resizing & (1 << 3)) {
+        //         SetWindowSize(GetScreenWidth(), max(GetScreenHeight() + GetMouseDelta().y, settings.min_window_h));
+        //     }
+        // }
 
         // Scroll to Zoom in
         if (GetMouseWheelMove() && !ALT_DOWN) {
@@ -490,6 +619,7 @@ int main(char argc, char **argv) {
         real_camera.zoom = max(Lerp(real_camera.zoom, target_camera.zoom, dt * settings.lerpSpeed_zoom), 0);
 
         /// Rendering
+    RENDER:
         BeginMode2D(real_camera); {
             // ClearBackground((Color){0, 0, 0, 128});
             ClearBackground(settings.bg_color);
@@ -498,5 +628,6 @@ int main(char argc, char **argv) {
         EndDrawing();
     }
 
-    return 0;
+    return
+            0;
 }

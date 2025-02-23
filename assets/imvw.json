@@ -2,16 +2,16 @@
   "settings": {
     "padding": 10.0,
     "on_top": true,
-    "undecorated": false,
+    "undecorated": true,
     "rotation_speed": 1.0,
     "zoom_speed": 1.0,
-    "lerpSpeed_pan" : 30.0,
-    "lerpSpeed_zoom" : 20.0,
+    "lerpSpeed_pan": 30.0,
+    "lerpSpeed_zoom": 20.0,
     "lerpSpeed_rotate": 10.0,
-    "max_window_w": 3.0,
-    "max_window_h": 3.0,
-    "min_window_w": 10.0,
-    "min_window_h": 10.0,
+    "max_window_w": 640,
+    "max_window_h": 640,
+    "min_window_w": 160,
+    "min_window_h": 160,
     "bg_color": {
       "r": 0,
       "g": 0,
@@ -66,6 +66,11 @@
     {
       "func": "Toggle_Trilinear_Filtering",
       "press": "B"
+    },
+    {
+      "func": "Copy_To_Clipboard",
+      "modifier": "KEY_LEFT_CONTROL",
+      "press": "C"
     }
   ]
 }
