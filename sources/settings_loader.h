@@ -14,17 +14,18 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
 
     cJSON *settings = cJSON_GetObjectItem(json, "settings");
 
+    //TODO these need error handling
+
     out_settings->padding = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "padding"));
     if (isnan(out_settings->padding)) {
         //error
     }
 
-    //TODO these need error handling
-
-    //TODO needs more settings: LERP SPEEDS &
-
     out_settings->on_top = cJSON_IsTrue(cJSON_GetObjectItem(settings, "on_top"));
     out_settings->undecorated = cJSON_IsTrue(cJSON_GetObjectItem(settings, "undecorated"));
+    out_settings->maximized = cJSON_IsTrue(cJSON_GetObjectItem(settings, "maximized"));
+
+    out_settings->python_scripting = cJSON_IsTrue(cJSON_GetObjectItem(settings, "python_scripting"));
 
     out_settings->rotation_speed = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "rotation_speed"));
     out_settings->zoom_speed = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "zoom_speed"));

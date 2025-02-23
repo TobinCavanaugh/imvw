@@ -20,6 +20,10 @@
 #define DrawTextEx  RLDrawTextEx
 #include <commdlg.h>
 
+// TODO make this generic or something
+
+#include <Python.h>
+
 #include "cJSON.h"
 
 #include <stdio.h>
@@ -339,9 +343,20 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
     return CallWindowProc(default_wind_proc, hwnd, uMsg, wParam, lParam);
 }
 
+//TODO add a shit load of logging features
+
+u0 Edit_Settings_Json() {
+    //TODO not perfect...
+    ShellExecute(0, "open", ASSETS_PATH"imvw.json", 0, 0, SW_SHOWNORMAL);
+}
+
 //TODO add support for reloading from json in program runtime
 
 int main(char argc, char **argv) {
+    // Have no console window
+    HWND v = GetConsoleWindow();
+    ShowWindow(v, SW_HIDE);
+
     flut_add(exit), flut_add(puts);
     flut_add(Camera_Pan);
     flut_add(Camera_Home_ResetZoom);
@@ -351,6 +366,7 @@ int main(char argc, char **argv) {
     flut_add(Rotate_By_Mouse);
     flut_add(Rotate_By_Scroll);
     flut_add(Copy_To_Clipboard);
+    flut_add(Edit_Settings_Json);
 
     target_camera = real_camera;
 
@@ -361,6 +377,10 @@ int main(char argc, char **argv) {
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
     SetTargetFPS(60);
+
+    // Add our new window proc
+    default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
+    SetWindowLongPtr(GetWindowHandle(),GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
 
     // TODO relocate to other file {
     char *settings_path = ASSETS_PATH"imvw.json";
@@ -398,9 +418,11 @@ int main(char argc, char **argv) {
 
     //TODO }
 
-    // Add our new window proc
-    default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
-    SetWindowLongPtr(GetWindowHandle(),GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
+    if (settings.python_scripting) {
+        Py_Initialize();
+        // PyRun_SimpleString("print('Hello from Python!')");
+    }
+
 
     if (argc > 1) {
         char argv_path[MAX_PATH] = {'\0'};
@@ -418,17 +440,7 @@ int main(char argc, char **argv) {
 
     Camera_Home_ResetZoom();
 
-    u8 maximized_state = 0;
-
     i32 index = 0;
-
-    // 0b0000
-    // 0b0001 ^ UP
-    // 0b0010 > RIGHT
-    // 0b0100 V DOWN
-    // 0b1000 < LEFT
-    u8 is_resizing = 0;
-
 
     // Program loop
     while (!WindowShouldClose()) {
@@ -462,9 +474,9 @@ int main(char argc, char **argv) {
         }
 
         // Reset the zoom if the window is changing maximized state
-        if (maximized_state != IsWindowMaximized()) {
+        if (settings.maximized != IsWindowMaximized()) {
             Camera_Home_NoResetZoom();
-            maximized_state = IsWindowMaximized();
+            settings.maximized = IsWindowMaximized();
         }
 
         if (IsKeyPressed(KEY_O)) {

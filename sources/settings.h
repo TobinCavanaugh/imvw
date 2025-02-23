@@ -9,9 +9,12 @@ typedef struct {
     f32 padding;
     u8 on_top;
     u8 undecorated;
+    u8 maximized;
 
     f32 rotation_speed;
     f32 zoom_speed;
+
+    u8 python_scripting;
 
     f32 lerpSpeed_pan;
     f32 lerpSpeed_zoom;
