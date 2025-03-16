@@ -1,17 +1,3 @@
-#define Rectangle   WinRECTANGLE
-#define CloseWindow WinCloseWindow
-#include <windows.h>
-#undef Rectangle
-#undef CloseWindow
-
-#define ShowCursor  WinShowCursor
-#define LoadImage   WinLoadImage
-#define PlaySound   WinPlaySound
-#define DrawText    WinDrawText
-#define DrawTextEx  WinDrawTextEx
-
-#include <fileapi.h>
-
 #include "raylib.h"
 
 // #define Rectangle RECTANGLE
@@ -22,7 +8,6 @@
 #define PlaySound   RLPlaySound
 #define DrawText    RLDrawText
 #define DrawTextEx  RLDrawTextEx
-#include <commdlg.h>
 
 // TODO make this generic or something
 
@@ -44,10 +29,10 @@
 #include "tinyfiledialogs.h"
 #include "settings.h"
 #include "actions_loader.h"
-#include "rlgl.h"
 #include "settings_loader.h"
-#include "GLFW/glfw3native.h"
 #include "python_loader.h"
+#include "context_t.h"
+#include "imvw_interface.h"
 
 #define nameof(a) #a
 
@@ -64,17 +49,6 @@
 #define SHIFT_DOWN ( (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) )
 #define SHIFT_FINE ( SHIFT_DOWN ? 0.5f : 1.0f )
 
-
-/// Current fields TODO: Put into context struct
-Texture2D current_texture = {0};
-TextureFilter current_filter = TEXTURE_FILTER_TRILINEAR;
-char current_path[PATH_MAX] = {0};
-char current_window_title[PATH_MAX] = {0};
-
-/// Cameras
-Camera2D real_camera = (Camera2D){.target = V2f(0, 0), .offset = V2f(0, 0), .zoom = 1.0f, .rotation = 0.0f};
-Camera2D target_camera;
-
 /// Key actions
 key_action_t *actions_array = NULL;
 i32 actions_count = 0;
@@ -86,339 +60,16 @@ i32 python_scripts_count;
 /// Settings
 settings_t settings = {0};
 
+context_t ctx = {
+    .current_tex = {0},
+    .current_filter = TEXTURE_FILTER_TRILINEAR, // TODO this should be a setting
+    .real_camera = (Camera2D) {.target = (v2f) {0, 0}, .offset = (v2f) {0, 0}, .zoom = 1.0f, .rotation = 0.0f},
+    .current_path = "",
+    .current_window_title = ""
+};
+
 // TODO: Add toggle help screen function
 
-
-v2f CalculateWindowSize() {
-    f32 aspect_ratio = (f32) current_texture.width / (f32) current_texture.height;
-
-    f32 max_w = current_texture.width;
-    f32 max_h = current_texture.height;
-
-    // Maximum size
-    f32 sw = (f32) (settings.max_window_w);
-    f32 sh = (f32) (settings.max_window_h);
-    // If its too large for the monitor
-    if (current_texture.width >= sw || current_texture.height >= sh) {
-        if (current_texture.width >= current_texture.height) {
-            max_w = sw;
-            max_h = sw * 1.0f / aspect_ratio;
-        } else {
-            max_h = sh;
-            max_w = sh * aspect_ratio;
-        }
-    }
-
-    // Minimum size
-    f32 mw = (f32) (settings.min_window_w);
-    f32 mh = (f32) (settings.min_window_h);
-    // Handle minimum size case
-    if (current_texture.width <= mw || current_texture.height <= mh) {
-        if (current_texture.width >= current_texture.height) {
-            max_w = mw;
-            max_h = mw * 1.0f / aspect_ratio;
-        } else {
-            max_h = mh;
-            max_w = mh * aspect_ratio;
-        }
-    }
-
-    return V2f(max_w, max_h);
-}
-
-u8 IsDockedToMonitor(HWND hWnd) {
-    WINDOWPLACEMENT placement = {sizeof(WINDOWPLACEMENT)};
-    GetWindowPlacement(hWnd, &placement);
-    RECT rc;
-    GetWindowRect(hWnd, &rc);
-
-    return placement.showCmd == SW_SHOWNORMAL
-           && (rc.left != placement.rcNormalPosition.left ||
-               rc.top != placement.rcNormalPosition.top ||
-               rc.right != placement.rcNormalPosition.right ||
-               rc.bottom != placement.rcNormalPosition.bottom);
-}
-
-u0 Camera_FitWindow() {
-    if (!IsWindowMaximized() && !IsDockedToMonitor(GetWindowHandle())) {
-        v2f size = CalculateWindowSize();
-        SetWindowSize((i32) size.x, (i32) size.y);
-    }
-}
-
-u0 Load(char *path) {
-    strcpy(current_path, path);
-    strcpy(current_window_title, "imgvw | ");
-    strcat(current_window_title, current_path);
-
-    if (current_texture.width != 0) {
-        UnloadTexture(current_texture);
-    }
-
-    current_texture = LoadTexture(path);
-    SetWindowTitle(current_window_title);
-    GenTextureMipmaps(&current_texture);
-    SetTextureFilter(current_texture, current_filter);
-
-    //TODO MOVE LOGIC TO SECONDARY THREAD, PERFORM LOADING ON MAIN THREAD
-    Camera_FitWindow();
-}
-
-u0 Reload() {
-    Load(current_path);
-}
-
-u0 Rotate(f32 amount) {
-    Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
-    target_camera.offset = GetMousePosition();
-    target_camera.target = mwp;
-    target_camera.rotation += amount * GetFrameTime() * 125.0f * settings.rotation_speed * SHIFT_FINE;
-}
-
-u0 Rotate_By_Scroll() {
-    Rotate(GetMouseWheelMove());
-}
-
-u0 Rotate_By_Mouse() {
-    // Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
-    // target_camera.offset = GetMousePosition();
-    // target_camera.target = mwp;
-    target_camera.rotation += GetMouseDelta().x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE * (
-        GetFrameTime() * 100.0f * settings.rotation_speed);
-}
-
-u0 Camera_Home_Internal(u8 reset_zoom) {
-    target_camera.offset = V2f(GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f);
-    target_camera.target = V2f(0, 0);
-    target_camera.rotation = 0;
-
-    if (!reset_zoom) {
-        return;
-    }
-
-    // Perfectly zoom in
-    f32 screen_width = GetScreenWidth();
-    f32 screen_height = GetScreenHeight();
-
-    f32 texture_width = (current_texture.width + settings.padding * 2.0f);
-    f32 texture_height = (current_texture.height + settings.padding * 2.0f);
-
-    f32 horizontal_zoom = screen_width / texture_width;
-    f32 vertical_zoom = screen_height / texture_height;
-    target_camera.zoom = min(horizontal_zoom, vertical_zoom);
-}
-
-u0 Camera_Home_NoResetZoom() {
-    Camera_Home_Internal(false);
-}
-
-u0 Camera_Home_ResetZoom() {
-    Camera_Home_Internal(true);
-}
-
-
-u0 Toggle_Trilinear_Filtering() {
-    if (current_filter == TEXTURE_FILTER_TRILINEAR) {
-        current_filter = TEXTURE_FILTER_POINT;
-    } else {
-        current_filter = TEXTURE_FILTER_TRILINEAR;
-    }
-
-    SetTextureFilter(current_texture, current_filter);
-}
-
-u0 Camera_Pan() {
-    v2f d = GetMouseDelta();
-    target_camera.offset.x += d.x * SHIFT_FINE;
-    target_camera.offset.y += d.y * SHIFT_FINE;
-
-    Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), target_camera);
-    target_camera.offset = GetMousePosition();
-    target_camera.target = mwp;
-}
-
-u0 Open_File_Dialog() {
-    char const *lFilterPatterns[2] = {"*.png", "*.jpg"};
-    char *out = tinyfd_openFileDialog(
-        "Select a PNG file",
-        NULL,
-        2,
-        lFilterPatterns,
-        "*.png|*.jpg",
-        0);
-
-    printf("[[%s]]", out);
-    if (out != NULL && strlen(out) > 0) {
-        Load(out);
-        Camera_Home_ResetZoom();
-    }
-}
-
-u0 Copy_To_Clipboard() {
-    Image img = LoadImageFromTexture(current_texture);
-    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-
-    // Ungodly
-    u8 *bgraData = malloc(img.width * img.height * 4);
-    if (bgraData == NULL) {
-        fprintf(stderr, "Failed to allocate memory for BGRA data...\n");
-        UnloadImage(img);
-        return;
-    }
-
-    // TODO What the fuck. Without this the image is BGRA
-    // This is also sick because we get to load the texture from GPU to memory
-    // then to heap then to copy. So if its a large image we're loading the
-    // image like 3 times. Fucked.
-    // Convert RGBA to BGRA
-    for (int i = 0; i < img.width * img.height; i++) {
-        bgraData[i * 4 + 0] = ((u8 *) img.data)[i * 4 + 2]; // B
-        bgraData[i * 4 + 1] = ((u8 *) img.data)[i * 4 + 1]; // G
-        bgraData[i * 4 + 2] = ((u8 *) img.data)[i * 4 + 0]; // R
-        bgraData[i * 4 + 3] = ((u8 *) img.data)[i * 4 + 3]; // A
-    }
-
-    HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, bgraData);
-    // HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, img.data);
-
-    if (OpenClipboard(GetWindowHandle())) {
-        EmptyClipboard();
-        SetClipboardData(CF_BITMAP, hbm);
-        CloseClipboard();
-    } else {
-        fprintf(stderr, "Failure to open clipboard...\n");
-    }
-
-    DeleteObject(hbm);
-    UnloadImage(img);
-    free(bgraData);
-}
-
-//TODO move to context
-LONG_PTR default_wind_proc;
-
-LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_CONTEXTMENU: {
-            // Check if the right-click is on the title bar
-            if ((HWND) wParam == hwnd) {
-                // Create a context menu
-                HMENU hMenu = CreatePopupMenu();
-
-                //TODO make this extensible via configuration | script
-                // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
-                AppendMenu(hMenu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, 1, "Keep on top");
-                AppendMenu(hMenu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, 2, "Undecorated");
-
-                // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
-                AppendMenu(hMenu, MF_STRING, 3, "Focus");
-                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-
-                // AppendMenu(hMenu, MF_STRING, SC_MOVE, "Move");
-
-                AppendMenu(hMenu, MF_STRING, SC_MINIMIZE, "Minimize");
-
-                if (IsWindowMaximized()) {
-                    AppendMenu(hMenu, MF_STRING, SC_RESTORE, "Restore");
-                } else {
-                    AppendMenu(hMenu, MF_STRING, SC_MAXIMIZE, "Maximize");
-                }
-                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-                AppendMenu(hMenu, MF_STRING, SC_CLOSE, "Close");
-
-                // Show the context menu
-                POINT pt;
-                GetCursorPos(&pt);
-                i32 result = TrackPopupMenu(hMenu, TPM_CENTERALIGN | TPM_HORPOSANIMATION | TPM_RETURNCMD, pt.x, pt.y, 0,
-                                            hwnd, NULL);
-
-
-                // If we dont select an option, fix the mouse delta still being
-                // applied to the camera move. Doesn't work quite right if you
-                // scroll, then right click, then click away. This could be
-                // fixed by making a custom input struct that we can control
-                // with more precision.
-                if (result == 0) {
-                    POINT p;
-                    GetCursorPos(&p);
-
-                    ScreenToClient(hwnd, &p);
-                    SetMousePosition(p.x, p.y);
-                    SetMousePosition(p.x, p.y);
-                } else {
-                    // TPM_RETURNCMD doesnt send the message, so we have to
-                    SendMessage(GetWindowHandle(), WM_COMMAND, result, 0);
-                }
-                // Nothing selected
-                DestroyMenu(hMenu);
-            }
-            return 0;
-        }
-        case WM_COMMAND: {
-            switch (LOWORD(wParam)) {
-                case 1: // Keep on Top
-                    settings.on_top = !settings.on_top;
-                // settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
-                    break;
-                case 2: // Undecorate
-                    settings.undecorated = !settings.undecorated;
-                    break;
-                case 3:
-                    Camera_Home_ResetZoom();
-                    break;
-                case SC_MOVE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
-                    break;
-                case SC_MINIMIZE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
-                    break;
-                case SC_RESTORE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
-                    break;
-                case SC_MAXIMIZE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
-                    break;
-                case SC_CLOSE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
-                    break;
-                default:
-                    printf("/////////");
-                    break;
-            }
-            return 0;
-        }
-    }
-    // Call the original window procedure for default processing
-    // return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    return CallWindowProc(default_wind_proc, hwnd, uMsg, wParam, lParam);
-}
-
-//TODO add a shit load of logging features
-
-u0 Edit_Settings_Json() {
-    //TODO not perfect...
-    ShellExecute(0, "open", ASSETS_PATH"imvw.json", 0, 0, SW_SHOWNORMAL);
-}
-
-u0 Enable_Python() {
-    settings.python_scripting = 1;
-    Py_Initialize();
-}
-
-u0 Disable_Python() {
-    Py_Finalize();
-    settings.python_scripting = 0;
-}
-
-u0 Window_On_Top(void *state_ptr) {
-    if (state_ptr == NULL) {
-        settings.on_top = !settings.on_top;
-        return;
-    }
-
-    u8 state = *(u8 *) state_ptr;
-    settings.on_top = state;
-}
 
 //TODO add support for reloading from json in program runtime
 int main(char argc, char **argv) {
@@ -449,11 +100,11 @@ int main(char argc, char **argv) {
     flut_add(Open_File_Dialog);
     flut_add(printf);
 
-    target_camera = real_camera;
+    ctx.target_camera = ctx.real_camera;
 
     // Add our new window proc
-    default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
-    SetWindowLongPtr(GetWindowHandle(),GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
+    ctx.default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
+    SetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
 
     // TODO relocate to other file. And other thread? {
     char *settings_path = ASSETS_PATH"imvw.json";
@@ -636,44 +287,44 @@ int main(char argc, char **argv) {
 
         // Scroll to Zoom in
         if (GetMouseWheelMove() && !ALT_DOWN) {
-            Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
-            target_camera.offset = GetMousePosition();
-            target_camera.target = mwp;
+            Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
+            ctx.target_camera.offset = GetMousePosition();
+            ctx.target_camera.target = mwp;
 
             // Zooming feels slow at small values
             // TODO this sucks
-            target_camera.zoom += GetMouseWheelMove() * GetFrameTime() * SHIFT_FINE *
+            ctx.target_camera.zoom += GetMouseWheelMove() * GetFrameTime() * SHIFT_FINE *
                     settings.zoom_speed *
-                    (target_camera.zoom > 1 ? 2.0f : 1.0f) *
-                    (target_camera.zoom > 2 ? 2.0f : 1.0f) *
-                    (target_camera.zoom > 3 ? 2.0f : 1.0f) *
-                    (target_camera.zoom > 4 ? 1.5f : 1.0f) *
-                    (target_camera.zoom > 9 ? 1.5f : 1.0f) *
-                    (target_camera.zoom > 50 ? 1.5f : 1.0f) *
-                    (target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
+                    (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
+                    (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
+                    (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
+                    (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
+                    (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
+                    (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
+                    (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
 
-            f32 max_zoom_in = 100.0f / (max(current_texture.height, current_texture.width) + settings.padding * 2.0f);
+            f32 max_zoom_in = 100.0f / (max(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
             // f32 min_zoom_out = max(GetScreenHeight(), GetScreenWidth()) ;
-            // f32 min_zoom_out = max(current_texture.width, current_texture.height);
+            // f32 min_zoom_out = max(ctx.current_texture.width, ctx.current_texture.height);
             f32 min_zoom_out = 128;
-            target_camera.zoom = max(min(target_camera.zoom, min_zoom_out), max_zoom_in);
-            // printf("[[%.5f]]", target_camera.zoom);
+            ctx.target_camera.zoom = max(min(ctx.target_camera.zoom, min_zoom_out), max_zoom_in);
+            // printf("[[%.5f]]", ctx.target_camera.zoom);
         }
 
         /// Lerp camera fields
         f32 dt = GetFrameTime();
-        real_camera.offset = Vector2Lerp(real_camera.offset, target_camera.offset, dt * settings.lerpSpeed_pan);
-        real_camera.target = Vector2Lerp(real_camera.target, target_camera.target, dt * settings.lerpSpeed_pan);
-        real_camera.rotation = Lerp(real_camera.rotation, target_camera.rotation, dt * settings.lerpSpeed_rotate);
-        real_camera.zoom = max(Lerp(real_camera.zoom, target_camera.zoom, dt * settings.lerpSpeed_zoom), 0);
+        ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset, dt * settings.lerpSpeed_pan);
+        ctx.real_camera.target = Vector2Lerp(ctx.real_camera.target, ctx.target_camera.target, dt * settings.lerpSpeed_pan);
+        ctx.real_camera.rotation = Lerp(ctx.real_camera.rotation, ctx.target_camera.rotation, dt * settings.lerpSpeed_rotate);
+        ctx.real_camera.zoom = max(Lerp(ctx.real_camera.zoom, ctx.target_camera.zoom, dt * settings.lerpSpeed_zoom), 0);
 
         /// Rendering
     RENDER:
-        BeginMode2D(real_camera); {
+        BeginMode2D(ctx.real_camera); {
             // ClearBackground((Color){0, 0, 0, 128});
             ClearBackground(settings.bg_color);
-            if (current_texture.height != 0) {
-                DrawTexture(current_texture, -current_texture.width / 2.0f, -current_texture.height / 2.0f, WHITE);
+            if (ctx.current_tex.height != 0) {
+                DrawTexture(ctx.current_tex, -ctx.current_tex.width / 2.0f, -ctx.current_tex.height / 2.0f, WHITE);
             }
         }
         EndDrawing();

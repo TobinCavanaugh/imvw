@@ -5,6 +5,8 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include "dialect.h"
+
 typedef struct {
     f32 padding;
     u8 on_top;
