@@ -8,10 +8,34 @@
 #ifndef ACTIONS_LOADER_H
 #define ACTIONS_LOADER_H
 
+typedef enum {
+    ARG_TYPE_NONE,
+    ARG_TYPE_STR,
+    ARG_TYPE_BOOL,
+    ARG_TYPE_NUM,
+    ARG_TYPE_OBJECT,
+} ARG_TYPES;
+
 typedef struct {
     // Function to be called
     char func[FLUT_FUNC_NAME_MAX]; //Include
-    void *args; //Exclude
+
+    //Optional T
+    union {
+        cJSON *arg_obj;
+        u8 *arg_str;
+        f32 arg_num;
+        u8 arg_bool;
+    };
+
+    //TODO Rework to be:
+    // - PRESS
+    // - DOWN
+    // - RELEASE
+    // Add support for an array of modifier keys
+    // Add support for negative keys, i.e. ones that cannot be held for action
+
+    ARG_TYPES arg_type; // Exclude
 
     // Key to be pressed
     KeyboardKey press; //Include
@@ -28,13 +52,6 @@ typedef struct {
     MouseButton button; //Optional
     u8 priv_use_mouse;
 } key_action_t;
-
-// key_action_t * actions_add(key_action_t *actions_array, i32 *actions_count, key_action_t act) {
-// key_action_t * new_array = realloc(actions_array, sizeof(key_action_t) * (*actions_count + 1));
-// new_array[*actions_count] = act;
-// (*actions_count)++;
-// return new_array;
-// }
 
 u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key_action_t act) {
     *out_ptr_actions_array = realloc(*out_ptr_actions_array, (*out_actions_count + 1) * sizeof(key_action_t));
@@ -64,6 +81,7 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
             cJSON *hold = cJSON_GetObjectItem(action, "hold");
             cJSON *modifier = cJSON_GetObjectItem(action, "modifier");
             cJSON *button = cJSON_GetObjectItem(action, "button");
+            cJSON *arg = cJSON_GetObjectItem(action, "arg");
 
             if (action == NULL) {
                 continue;
@@ -108,6 +126,20 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                 }
             }
 
+            key_action.arg_type = ARG_TYPE_NONE;
+            if (arg) {
+                if (cJSON_IsBool(arg)) {
+                    key_action.arg_type = ARG_TYPE_BOOL;
+                    key_action.arg_bool = (u64) cJSON_IsTrue(arg);
+                } else if (cJSON_IsString(arg)) {
+                    key_action.arg_type = ARG_TYPE_STR;
+                    key_action.arg_str = strdup(cJSON_GetStringValue(arg));
+                } else {
+                    key_action.arg_type = ARG_TYPE_OBJECT;
+                    key_action.arg_obj = cJSON_Duplicate(arg, 1);
+                }
+            }
+
             if (key_action.priv_use_mouse == 0 && key_action.hold == KEY_NULL && key_action.press == KEY_NULL &&
                 key_action.modifier == KEY_NULL) {
                 char *x = cJSON_Print(action);
@@ -124,6 +156,7 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                     x);
                 free(x);
             }
+
 
             actions_add(out_ptr_actions_array, out_actions_count, key_action);
         }

@@ -28,4 +28,6 @@
 #define V3f(a, b, c) (Vector3) {a, b, c}
 #define v3f Vector3
 
+#define NO_OP ({ 0; })
+
 #endif //CAA_EPIDEMIC_DIALECT_H

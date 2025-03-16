@@ -1,17 +1,21 @@
-#include <windows.h>
-
-#define Rectangle   RECTANGLE
+#define Rectangle   WinRECTANGLE
 #define CloseWindow WinCloseWindow
+#include <windows.h>
+#undef Rectangle
+#undef CloseWindow
+
 #define ShowCursor  WinShowCursor
 #define LoadImage   WinLoadImage
 #define PlaySound   WinPlaySound
 #define DrawText    WinDrawText
 #define DrawTextEx  WinDrawTextEx
 
+#include <fileapi.h>
+
 #include "raylib.h"
 
 // #define Rectangle RECTANGLE
-#define CloseWindow RLCloseWindow
+// #define CloseWindow RLCloseWindow
 // #define CloseWindow() ({ rlglClose(); SendMessage(GetWindowHandle(), WM_CLOSE, 0, 0 ); })
 #define ShowCursor  RLShowCursor
 #define LoadImage   RLLoadImage
@@ -29,8 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <external/stb_image_write.h>
-#include <external/stb_image_write.h>
+#include <pthread.h>
 
 #include "raymath.h"
 #include "GLFW/glfw3.h"
@@ -44,6 +47,7 @@
 #include "rlgl.h"
 #include "settings_loader.h"
 #include "GLFW/glfw3native.h"
+#include "python_loader.h"
 
 #define nameof(a) #a
 
@@ -74,6 +78,10 @@ Camera2D target_camera;
 /// Key actions
 key_action_t *actions_array = NULL;
 i32 actions_count = 0;
+
+/// Python Scripts
+char **python_scripts_array = NULL;
+i32 python_scripts_count;
 
 /// Settings
 settings_t settings = {0};
@@ -229,26 +237,64 @@ u0 Camera_Pan() {
     target_camera.target = mwp;
 }
 
-u0 Copy_To_Clipboard() {
-    //TODO BROKEN
-    fprintf(stderr, "Copy to clipboard not properly implemented.");
-    return;
-    OpenClipboard(GetWindowHandle());
+u0 Open_File_Dialog() {
+    char const *lFilterPatterns[2] = {"*.png", "*.jpg"};
+    char *out = tinyfd_openFileDialog(
+        "Select a PNG file",
+        NULL,
+        2,
+        lFilterPatterns,
+        "*.png|*.jpg",
+        0);
 
-    Image img = LoadImageFromTexture(current_texture);
-
-    if (img.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
-        ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    printf("[[%s]]", out);
+    if (out != NULL && strlen(out) > 0) {
+        Load(out);
+        Camera_Home_ResetZoom();
     }
-
-    HBITMAP hbp = LoadBitmap(GetWindowHandle(), current_path);
-    SetClipboardData(CF_BITMAP, &hbp);
-
-    CloseClipboard();
-
-    UnloadImage(img);
 }
 
+u0 Copy_To_Clipboard() {
+    Image img = LoadImageFromTexture(current_texture);
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
+    // Ungodly
+    u8 *bgraData = malloc(img.width * img.height * 4);
+    if (bgraData == NULL) {
+        fprintf(stderr, "Failed to allocate memory for BGRA data...\n");
+        UnloadImage(img);
+        return;
+    }
+
+    // TODO What the fuck. Without this the image is BGRA
+    // This is also sick because we get to load the texture from GPU to memory
+    // then to heap then to copy. So if its a large image we're loading the
+    // image like 3 times. Fucked.
+    // Convert RGBA to BGRA
+    for (int i = 0; i < img.width * img.height; i++) {
+        bgraData[i * 4 + 0] = ((u8 *) img.data)[i * 4 + 2]; // B
+        bgraData[i * 4 + 1] = ((u8 *) img.data)[i * 4 + 1]; // G
+        bgraData[i * 4 + 2] = ((u8 *) img.data)[i * 4 + 0]; // R
+        bgraData[i * 4 + 3] = ((u8 *) img.data)[i * 4 + 3]; // A
+    }
+
+    HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, bgraData);
+    // HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, img.data);
+
+    if (OpenClipboard(GetWindowHandle())) {
+        EmptyClipboard();
+        SetClipboardData(CF_BITMAP, hbm);
+        CloseClipboard();
+    } else {
+        fprintf(stderr, "Failure to open clipboard...\n");
+    }
+
+    DeleteObject(hbm);
+    UnloadImage(img);
+    free(bgraData);
+}
+
+//TODO move to context
 LONG_PTR default_wind_proc;
 
 LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -259,8 +305,12 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 // Create a context menu
                 HMENU hMenu = CreatePopupMenu();
 
+                //TODO make this extensible via configuration | script
+                // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
                 AppendMenu(hMenu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, 1, "Keep on top");
                 AppendMenu(hMenu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, 2, "Undecorated");
+
+                // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
                 AppendMenu(hMenu, MF_STRING, 3, "Focus");
                 AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 
@@ -350,12 +400,39 @@ u0 Edit_Settings_Json() {
     ShellExecute(0, "open", ASSETS_PATH"imvw.json", 0, 0, SW_SHOWNORMAL);
 }
 
-//TODO add support for reloading from json in program runtime
+u0 Enable_Python() {
+    settings.python_scripting = 1;
+    Py_Initialize();
+}
 
+u0 Disable_Python() {
+    Py_Finalize();
+    settings.python_scripting = 0;
+}
+
+u0 Window_On_Top(void *state_ptr) {
+    if (state_ptr == NULL) {
+        settings.on_top = !settings.on_top;
+        return;
+    }
+
+    u8 state = *(u8 *) state_ptr;
+    settings.on_top = state;
+}
+
+//TODO add support for reloading from json in program runtime
 int main(char argc, char **argv) {
+    SetExitKey(KEY_NULL);
+
     // Have no console window
     HWND v = GetConsoleWindow();
     ShowWindow(v, SW_HIDE);
+
+    // Create our new window
+    SetTraceLogLevel(LOG_ERROR);
+    SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
+    SetTargetFPS(60);
 
     flut_add(exit), flut_add(puts);
     flut_add(Camera_Pan);
@@ -367,27 +444,25 @@ int main(char argc, char **argv) {
     flut_add(Rotate_By_Scroll);
     flut_add(Copy_To_Clipboard);
     flut_add(Edit_Settings_Json);
+    flut_add(Enable_Python);
+    flut_add(Disable_Python);
+    flut_add(Open_File_Dialog);
+    flut_add(printf);
 
     target_camera = real_camera;
-
-    SetExitKey(KEY_NULL);
-
-    // Create our new window
-    SetTraceLogLevel(LOG_ERROR);
-    SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
-    SetTargetFPS(60);
 
     // Add our new window proc
     default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
     SetWindowLongPtr(GetWindowHandle(),GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
 
-    // TODO relocate to other file {
+    // TODO relocate to other file. And other thread? {
     char *settings_path = ASSETS_PATH"imvw.json";
     if (!FileExists(settings_path)) {
         fprintf(stderr, "Settings file `imvw.json` not found... Generating a default one.\n");
         // TODO need a default settings file. Easiest just to string literal json file.
     }
+    HANDLE file_watch = FindFirstChangeNotificationA(ASSETS_PATH"imvw.json", FALSE,
+                                                     FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
     FILE *file = fopen(settings_path, "rb");
 
     // Get the size of the file
@@ -413,16 +488,15 @@ int main(char argc, char **argv) {
     load_actions(json_data, &actions_array, &actions_count);
     load_settings(json_data, &settings);
 
-    free(json_text);
-    cJSON_free(json_data);
-
-    //TODO }
-
     if (settings.python_scripting) {
-        Py_Initialize();
-        // PyRun_SimpleString("print('Hello from Python!')");
+        Enable_Python();
+        load_python(json_data, &python_scripts_array, &python_scripts_count);
     }
 
+    free(json_text);
+    cJSON_Delete(json_data);
+
+    //TODO }
 
     if (argc > 1) {
         char argv_path[MAX_PATH] = {'\0'};
@@ -442,9 +516,18 @@ int main(char argc, char **argv) {
 
     i32 index = 0;
 
+    if (settings.python_scripting) {
+        python_run_script_func(python_scripts_array, python_scripts_count, "start");
+    }
+
     // Program loop
     while (!WindowShouldClose()) {
-        /*Run through all of the key actions*/ {
+        if (settings.python_scripting) {
+            python_run_script_func(python_scripts_array, python_scripts_count, "update");
+        }
+
+        /*Run through all of the key actions*/
+    KEY_ACTIONS: {
             i32 i = 0;
             for (; i < actions_count; i++) {
                 key_action_t a = actions_array[i];
@@ -465,7 +548,15 @@ int main(char argc, char **argv) {
                 if (happened) {
                     flut_func_t fft;
                     if (flut_get(a.func, &fft)) {
-                        fft.func(a.args);
+                        // Default case
+                        if (a.arg_type == ARG_TYPE_NONE) {
+                            fft.func(NULL);
+                        } else {
+                            a.arg_type == ARG_TYPE_NUM ? fft.func(&a.arg_num) : NO_OP;
+                            a.arg_type == ARG_TYPE_BOOL ? fft.func(&a.arg_bool) : NO_OP;
+                            a.arg_type == ARG_TYPE_STR ? fft.func(a.arg_str) : NO_OP;
+                            a.arg_type == ARG_TYPE_OBJECT ? fft.func(a.arg_obj) : NO_OP;
+                        }
                     } else {
                         fprintf(stderr, "Could not find function of name `%s`\n", a.func);
                     }
@@ -473,27 +564,19 @@ int main(char argc, char **argv) {
             }
         }
 
+        // TODO Place in thread to auto reload settings etc.
+        // DWORD result;
+        // result = WaitForSingleObject(file_watch, INFINITE);
+        // if (WAIT_OBJECT_0 != result) {
+        //     printf("XXX");
+        // } else {
+        //     printf("yYyy");
+        // }
+
         // Reset the zoom if the window is changing maximized state
         if (settings.maximized != IsWindowMaximized()) {
             Camera_Home_NoResetZoom();
             settings.maximized = IsWindowMaximized();
-        }
-
-        if (IsKeyPressed(KEY_O)) {
-            char const *lFilterPatterns[2] = {"*.png", "*.jpg"};
-            char *out = tinyfd_openFileDialog(
-                "Select a PNG file",
-                NULL,
-                2,
-                lFilterPatterns,
-                "*.png|*.jpg",
-                0);
-
-            printf("[[%s]]", out);
-            if (out != NULL && strlen(out) > 0) {
-                Load(out);
-                Camera_Home_ResetZoom();
-            }
         }
 
         // Maximize / hide border
@@ -551,52 +634,6 @@ int main(char argc, char **argv) {
             }
         }
 
-        // if (IsWindowState(FLAG_WINDOW_UNDECORATED)) {
-        //     POINT p;
-        //     GetCursorPos(&p);
-        //
-        //     //~10 pixels epsilon
-        //     RECT rec;
-        //     GetWindowRect(GetWindowHandle(), &rec);
-        //
-        //     SetMouseCursor(MOUSE_CURSOR_ARROW);
-        //
-        //     //(1) bottom side
-        //     if (abs(p.y - rec.top) < 10 && (p.x > rec.left && p.x < rec.right)) {
-        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_NS);
-        //         //Resize horizontal
-        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 1)) : 0;
-        //     }
-        //     //(2) right side
-        //     if (abs(p.x - rec.right) < 10 && (p.y > rec.top && p.y < rec.bottom)) {
-        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_EW);
-        //         //Resize horizontal
-        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 2)) : 0;
-        //     }
-        //     //(3) bottom side
-        //     if (abs(p.y - rec.bottom) < 10 && (p.x > rec.left && p.x < rec.right)) {
-        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_NS);
-        //         //Resize horizontal
-        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 3)) : 0;
-        //     }
-        //     //(4) left side
-        //     if (abs(p.x - rec.left) < 10 && (p.y > rec.top && p.y < rec.bottom)) {
-        //         SetMouseCursor(MOUSE_CURSOR_RESIZE_EW);
-        //         //Resize horizontal
-        //         is_resizing = IsMouseButtonDown(MOUSE_BUTTON_LEFT) ? (is_resizing | (1 << 4)) : 0;
-        //     }
-        // }
-
-
-        // if (is_resizing) {
-        //     if (is_resizing & (1 << 2)) {
-        //         SetWindowSize(max(GetScreenWidth() + GetMouseDelta().x, settings.min_window_w), GetScreenHeight());
-        //     }
-        //     if (is_resizing & (1 << 3)) {
-        //         SetWindowSize(GetScreenWidth(), max(GetScreenHeight() + GetMouseDelta().y, settings.min_window_h));
-        //     }
-        // }
-
         // Scroll to Zoom in
         if (GetMouseWheelMove() && !ALT_DOWN) {
             Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
@@ -635,11 +672,14 @@ int main(char argc, char **argv) {
         BeginMode2D(real_camera); {
             // ClearBackground((Color){0, 0, 0, 128});
             ClearBackground(settings.bg_color);
-            DrawTexture(current_texture, -current_texture.width / 2.0f, -current_texture.height / 2.0f, WHITE);
+            if (current_texture.height != 0) {
+                DrawTexture(current_texture, -current_texture.width / 2.0f, -current_texture.height / 2.0f, WHITE);
+            }
         }
         EndDrawing();
     }
 
-    return
-            0;
+    CloseWindow();
+
+    return 0;
 }

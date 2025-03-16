@@ -1,8 +1,8 @@
 {
   "settings": {
     "padding": 10.0,
-    "on_top": true,
-    "undecorated": true,
+    "on_top": false,
+    "undecorated": false,
     "rotation_speed": 1.0,
     "python_scripting": true,
     "zoom_speed": 1.0,
@@ -21,7 +21,7 @@
     }
   },
   "scripts": [
-    ""
+    "example.py"
   ],
   "actions": [
     {
@@ -75,6 +75,15 @@
       "func": "Copy_To_Clipboard",
       "modifier": "KEY_LEFT_CONTROL",
       "press": "C"
+    },
+    {
+      "func": "Open_File_Dialog",
+      "press": "O"
+    },
+    {
+      "func": "printf",
+      "arg": "yup\n",
+      "hold": "P"
     },
     {
       "func": "Edit_Settings_Json",
