@@ -7,6 +7,7 @@
 
 #include <raylib.h>
 #include <dialect.h>
+#include <pthread.h>
 
 #ifdef _WIN64
 typedef __int64 LONG_PTR;
@@ -16,7 +17,13 @@ typedef __int64 LONG_PTR;
 
 typedef struct {
     Texture2D current_tex;
-    TextureFilter current_filter;
+
+    u8 tex_loading;
+    u8 tex_need_load;
+    u8 tex_need_filter;
+
+    v2f mouse_pos;
+    v2f mouse_delta;
 
     Camera2D real_camera;
     Camera2D target_camera;

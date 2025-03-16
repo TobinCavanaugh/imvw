@@ -37,7 +37,9 @@ set(PROJECT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/sources/") # Define PROJECT_INCLU
 add_executable(${PROJECT_NAME}
         sources/imvw_interface.c
         sources/imvw_interface.h
-        sources/context_t.h)
+        sources/context_t.h
+        sources/imvw_init.c
+        sources/imvw_init.h)
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_INCLUDE})
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib PRIVATE ${PYTHON_LIBRARIES})

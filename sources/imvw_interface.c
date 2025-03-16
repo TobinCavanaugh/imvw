@@ -4,11 +4,14 @@
 
 #include "imvw_interface.h"
 
+#include <external/stb_image.h>
 
 
 // TODO DUPLICATED SHIFT_FINE
 #define SHIFT_DOWN ( (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) )
 #define SHIFT_FINE ( SHIFT_DOWN ? 0.5f : 1.0f )
+
+#define SPIN_IF_TEX_LOADING while(ctx.tex_loading || ctx.tex_need_load) { Sleep(16); }
 
 v2f CalculateWindowSize() {
     f32 aspect_ratio = (f32) ctx.current_tex.width / (f32) ctx.current_tex.height;
@@ -68,6 +71,7 @@ u0 Camera_FitWindow() {
 }
 
 u0 Load(char *path) {
+    // Set title path
     strcpy(ctx.current_path, path);
     strcpy(ctx.current_window_title, "imgvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
@@ -76,13 +80,26 @@ u0 Load(char *path) {
         UnloadTexture(ctx.current_tex);
     }
 
-    ctx.current_tex = LoadTexture(path);
-    SetWindowTitle(ctx.current_window_title);
-    GenTextureMipmaps(&ctx.current_tex);
-    SetTextureFilter(ctx.current_tex, ctx.current_filter);
-
-    //TODO MOVE LOGIC TO SECONDARY THREAD, PERFORM LOADING ON MAIN THREAD
+    // Load the info of the image, assign it to our current texture then fit
+    // the window correctly. This means our window fits the size of our tex
+    // before it's fully loaded :)
+    i32 wid, hei, channels;
+    stbi_info(path, &wid, &hei, &channels);
+    ctx.current_tex.width = wid;
+    ctx.current_tex.height = hei;
     Camera_FitWindow();
+
+    // Our LoadTexture has to happen on our `main` thread, due to opengl
+    // stuff. So what that concretely means is that we need to move our
+    // majority logic (input, python, etc) onto another thread, and any
+    // rendering / loading stuff has gotta be main thread. We should just
+    // have a bool that gets set when the current_path has been changed
+    // to load a new file
+
+    ctx.tex_need_load = 1;
+
+    // ctx.current_tex = LoadTexture(path);
+    SetWindowTitle(ctx.current_window_title);
 }
 
 u0 Reload() {
@@ -141,23 +158,39 @@ u0 Camera_Home_ResetZoom() {
 
 
 u0 Toggle_Trilinear_Filtering() {
-    if (ctx.current_filter == TEXTURE_FILTER_TRILINEAR) {
-        ctx.current_filter = TEXTURE_FILTER_POINT;
-    } else {
-        ctx.current_filter = TEXTURE_FILTER_TRILINEAR;
+    // if (settings.texture_filter == TEXTURE_FILTER_TRILINEAR) {
+    //     settings.texture_filter = TEXTURE_FILTER_POINT;
+    // } else {
+    //     settings.texture_filter = TEXTURE_FILTER_TRILINEAR;
+    // }
+    ctx.tex_need_filter = 1;
+    switch (settings.texture_filter) {
+        case TEXTURE_FILTER_POINT:
+            settings.texture_filter = TEXTURE_FILTER_TRILINEAR;
+            break;
+        case TEXTURE_FILTER_TRILINEAR:
+            settings.texture_filter = TEXTURE_FILTER_POINT;
+            break;
+        default:
+            settings.texture_filter = TEXTURE_FILTER_POINT;
+            break;
     }
-
-    SetTextureFilter(ctx.current_tex, ctx.current_filter);
 }
 
 u0 Camera_Pan() {
-    v2f d = GetMouseDelta();
+    //TODO Camera panning is a little shitty and laggy
+
+    // v2f d = GetMouseDelta();
+    v2f d = ctx.mouse_delta;
     ctx.target_camera.offset.x += d.x * SHIFT_FINE;
     ctx.target_camera.offset.y += d.y * SHIFT_FINE;
 
-    Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.target_camera);
-    ctx.target_camera.offset = GetMousePosition();
+    Vector2 mwp = GetScreenToWorld2D(ctx.mouse_pos, ctx.target_camera);
+    ctx.target_camera.offset = ctx.mouse_pos;
     ctx.target_camera.target = mwp;
+
+    // ctx.target_camera.offset = ctx.mouse_pos;
+    // ctx.target_camera.target = ctx.mwp;
 }
 
 u0 Open_File_Dialog() {

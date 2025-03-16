@@ -30,4 +30,16 @@
 
 #define NO_OP ({ 0; })
 
+static u0 stolow(char *str) {
+    for (i32 i = 0; str[i]; i++) {
+        str[i] = tolower(str[i]);
+    }
+}
+
+static u0 stoup(char *str) {
+    for (i32 i = 0; str[i]; i++) {
+        str[i] = toupper(str[i]);
+    }
+}
+
 #endif //CAA_EPIDEMIC_DIALECT_H

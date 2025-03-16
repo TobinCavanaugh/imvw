@@ -39,6 +39,24 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
     out_settings->min_window_w = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "min_window_w"));
     out_settings->min_window_h = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "min_window_h"));
 
+    char *filter_name = cJSON_GetStringValue(cJSON_GetObjectItem(settings, "texture_filter"));
+
+    if (filter_name) {
+        stoup(filter_name);
+
+        if (strstr(filter_name, "POINT") != NULL || strstr(filter_name, "NONE") != NULL) {
+            out_settings->texture_filter = TEXTURE_FILTER_POINT;
+        }
+        if (strstr(filter_name, "BILINEAR") != NULL) {
+            out_settings->texture_filter = TEXTURE_FILTER_BILINEAR;
+        }
+        if (strstr(filter_name, "TRILINEAR") != NULL) {
+            out_settings->texture_filter = TEXTURE_FILTER_TRILINEAR;
+        }
+    } else {
+        out_settings->texture_filter = TEXTURE_FILTER_BILINEAR;
+    }
+
     out_settings->bg_color = ( {
         Color color = BLACK;
 

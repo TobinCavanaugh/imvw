@@ -13,6 +13,7 @@ typedef struct {
     u8 undecorated;
     u8 maximized;
 
+
     f32 rotation_speed;
     f32 zoom_speed;
 
@@ -28,6 +29,8 @@ typedef struct {
 
     f32 min_window_w;
     f32 min_window_h;
+
+    TextureFilter texture_filter;
 
     Color bg_color;
 } settings_t;
