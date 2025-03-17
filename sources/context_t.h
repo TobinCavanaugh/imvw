@@ -21,12 +21,18 @@ typedef struct {
     u8 tex_loading;
     u8 tex_need_load;
     u8 tex_need_filter;
+    u8 tex_channels;
+    i64 tex_fsize;
 
     v2f mouse_pos;
     v2f mouse_delta;
 
+    f32 frame_time;
+
     Camera2D real_camera;
     Camera2D target_camera;
+
+    Font current_font;
 
     LONG_PTR default_wind_proc;
 

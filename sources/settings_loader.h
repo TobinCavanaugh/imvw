@@ -4,6 +4,9 @@
 
 #ifndef SETTINGS_LOADER_H
 #define SETTINGS_LOADER_H
+#include "context_t.h"
+
+extern context_t ctx;
 
 u0 load_settings(cJSON *json, settings_t *out_settings) {
     // Parse the settings
@@ -44,18 +47,21 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
     if (filter_name) {
         stoup(filter_name);
 
-        if (strstr(filter_name, "POINT") != NULL || strstr(filter_name, "NONE") != NULL) {
+        if (strstr(filter_name, "P") != NULL || strstr(filter_name, "NONE") != NULL) {
             out_settings->texture_filter = TEXTURE_FILTER_POINT;
         }
-        if (strstr(filter_name, "BILINEAR") != NULL) {
+        if (strstr(filter_name, "BI") != NULL) {
             out_settings->texture_filter = TEXTURE_FILTER_BILINEAR;
         }
-        if (strstr(filter_name, "TRILINEAR") != NULL) {
+        if (strstr(filter_name, "TRI") != NULL) {
             out_settings->texture_filter = TEXTURE_FILTER_TRILINEAR;
         }
     } else {
         out_settings->texture_filter = TEXTURE_FILTER_BILINEAR;
     }
+
+    ctx.tex_need_filter = 1;
+
 
     out_settings->bg_color = ( {
         Color color = BLACK;

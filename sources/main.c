@@ -1,5 +1,4 @@
 #include "raylib.h"
-
 // #define Rectangle RECTANGLE
 // #define CloseWindow RLCloseWindow
 // #define CloseWindow() ({ rlglClose(); SendMessage(GetWindowHandle(), WM_CLOSE, 0, 0 ); })
@@ -9,7 +8,6 @@
 #define DrawText    RLDrawText
 #define DrawTextEx  RLDrawTextEx
 
-// TODO make this generic or something
 
 #include <Python.h>
 
@@ -19,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <external/stb_image.h>
 
 #include "raymath.h"
 #include "GLFW/glfw3.h"
@@ -71,6 +70,7 @@ context_t ctx = {
 
 u0 thread_playerinput() {
     while (1) {
+        f128 frame_start = GetTime();
         /*Run through all of the key actions*/
     KEY_ACTIONS: {
             i32 i = 0;
@@ -109,8 +109,59 @@ u0 thread_playerinput() {
             }
         }
 
-        Sleep(16);
+        // Sleep for time to ensure input framerate doesn't exceed 60fps
+
+
+        f128 frame_end = GetTime();
+        f32 elapsed = frame_end - frame_start;
+
+        ctx.frame_time = elapsed;
+
+        //TODO add config for target framerate
+        //TODO fix framerate independence issues in imvw_interface.h
+
+        f32 target_frametime = 16;
+        i64 wait_ms = (i64) round(target_frametime - (elapsed * 1000));
+
+        if (wait_ms > 0) {
+            Sleep(wait_ms);
+        }
     }
+}
+
+f32 get_system_font_size() {
+    NONCLIENTMETRICS metrics = {0};
+    metrics.cbSize = sizeof(NONCLIENTMETRICS);
+
+    // This is guesstimation, but decent
+    f32 fontsize = 8;
+    if (SystemParametersInfo(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0)) {
+        fontsize += -F32(metrics.lfMessageFont.lfHeight);
+    }
+
+    return fontsize;
+}
+
+char properties_working[PATH_MAX];
+
+f32 draw_properties(f32 properties_line, char *format, ...) {
+    // Get our varargs
+    va_list args;
+    va_start(args, format);
+
+    // i32 font_size = I32(F32(GetScreenHeight()) / 25.); //TODO setting for font size
+    f32 font_size = get_system_font_size();
+
+    vsnprintf(properties_working, PATH_MAX, format, args);
+
+    BeginBlendMode(BLEND_MULTIPLIED);
+    DrawRectangle(0, properties_line, (i32) MeasureTextEx(ctx.current_font, properties_working, font_size, 0).x,
+                  font_size, settings.bg_color);
+    EndBlendMode();
+
+    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
+
+    return font_size;
 }
 
 // TODO: Add toggle help screen function
@@ -124,7 +175,8 @@ int main(char argc, char **argv) {
     ShowWindow(v, SW_HIDE);
 
     // Create our new window
-    SetTraceLogLevel(LOG_ERROR);
+    // SetTraceLogLevel(LOG_ERROR);
+    SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
     SetTargetFPS(60);
@@ -207,6 +259,19 @@ int main(char argc, char **argv) {
         Load(ASSETS_PATH"test2.png");
     }
 
+    // TODO this loading might be possible async
+    char *win_font_name = "C:\\Windows\\Fonts\\segoeui.ttf";
+    Font rlfont = LoadFontEx(win_font_name, 128, NULL, 0);
+
+    if (settings.program_font_path != NULL && strlen(settings.program_font_path) > 0) {
+        Font custom_font = LoadFont(settings.program_font_path);
+        UnloadFont(rlfont);
+        rlfont = custom_font;
+    }
+
+    ctx.current_font = rlfont;
+
+
     Camera_Home_ResetZoom();
 
     i32 index = 0;
@@ -280,7 +345,6 @@ int main(char argc, char **argv) {
             goto RENDER;
         }
 
-
         // Pan window TODO FIX
         if ((IsMouseButtonDown(0) || IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) && ALT_DOWN && !CTRL_DOWN) {
             v2f pos = GetWindowPosition();
@@ -319,6 +383,13 @@ int main(char argc, char **argv) {
             // printf("[[%.5f]]", ctx.target_camera.zoom);
         }
 
+
+        // If we are very close to a 360 degree interval, set it to 0
+        f32 nearest = roundf(ctx.real_camera.rotation / 360.f) * 360.f;
+        if (fabs(ctx.real_camera.rotation - nearest) < EPSILON) {
+            ctx.real_camera.rotation = 0;
+        }
+
         /// Lerp camera fields
         f32 dt = GetFrameTime();
         ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset,
@@ -343,9 +414,12 @@ int main(char argc, char **argv) {
                 EndDrawing();
                 BeginDrawing();
 
+                // Load the image here
                 ctx.current_tex = LoadTexture(ctx.current_path);
                 GenTextureMipmaps(&ctx.current_tex);
                 ctx.tex_loading = 0, ctx.tex_need_load = 0;
+
+                Camera_FitWindow();
             }
 
             // Set the filter
@@ -360,6 +434,32 @@ int main(char argc, char **argv) {
                 DrawTexture(ctx.current_tex, -ctx.current_tex.width / 2.0f, -ctx.current_tex.height / 2.0f, WHITE);
             }
         }
+        EndMode2D();
+
+        // Draw image properties
+        if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.height >= 0) {
+            //TODO make this configurable or implemented in python mayhaps
+            f32 pl = 0;
+
+            // Draw the image dimensions
+            pl += draw_properties(pl, " %dx%d ", ctx.current_tex.width, ctx.current_tex.height);
+
+            // Draw the file size
+            char buf[64 + 32];
+            StrFormatByteSize64(ctx.tex_fsize, buf, sizeof(buf));
+            pl += draw_properties(pl, " %s ", buf);
+
+            // Draw how many channels the image has
+            pl += draw_properties(pl, " Channels: %d ", ctx.tex_channels);
+
+            // Display pixelformat
+            pixel_format_to_str_s(ctx.current_tex.format, buf, sizeof(buf));
+            pl += draw_properties(pl, " Format: %s ", buf);
+        }
+
+        // Make this optional
+        DrawFPS(4, GetScreenHeight() - 20);
+
         EndDrawing();
     }
 

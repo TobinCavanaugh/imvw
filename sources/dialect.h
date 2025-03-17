@@ -2,6 +2,7 @@
 // Created by tobin on 12/15/24.
 //
 
+#include <ctype.h>
 #include <stdint.h>
 #include "raylib.h"
 
@@ -10,18 +11,45 @@
 
 #define u0 void
 
-#define u8 uint8_t
-#define u16 uint16_t
-#define u32 uint32_t
-#define u64 uint64_t
-
-#define i8 int8_t
-#define i16 int16_t
-#define i32 int32_t
-#define i64 int64_t
-
+/* Use GCC's built-in types for fixed width integers */
+#define u8 __UINT8_TYPE__
+#define u16 __UINT16_TYPE__
+#define u32 __UINT32_TYPE__
+#define u64 __UINT64_TYPE__
+#define i8 __INT8_TYPE__
+#define i16 __INT16_TYPE__
+#define i32 __INT32_TYPE__
+#define i64 __INT64_TYPE__
 #define f32 float
 #define f128 long double
+
+/* Maximum values for unsigned types */
+#define u8_MAX __UINT8_MAX__
+#define u16_MAX __UINT16_MAX__
+#define u32_MAX __UINT32_MAX__
+#define u64_MAX __UINT64_MAX__
+
+/* Maximum and minimum values for signed types */
+#define i8_MAX 127
+#define i8_MIN (-128)
+#define i16_MAX 32767
+#define i16_MIN (-32768)
+#define i32_MAX 2147483647
+#define i32_MIN (-2147483648)
+#define i64_MAX 9223372036854775807LL
+#define i64_MIN (-9223372036854775807LL - 1LL)
+
+/* Casting macros */
+#define U8(__a) ((u8)(__a))
+#define U16(__a) ((u16)(__a))
+#define U32(__a) ((u32)(__a))
+#define U64(__a) ((u64)(__a))
+#define I8(__a) ((i8)(__a))
+#define I16(__a) ((i16)(__a))
+#define I32(__a) ((i32)(__a))
+#define I64(__a) ((i64)(__a))
+#define F32(__a) ((f32)(__a))
+#define F128(__a) ((f128)(__a))
 
 #define V2f(a, b) (Vector2) {a, b}
 #define v2f Vector2

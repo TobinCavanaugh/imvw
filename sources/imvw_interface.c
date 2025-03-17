@@ -73,7 +73,7 @@ u0 Camera_FitWindow() {
 u0 Load(char *path) {
     // Set title path
     strcpy(ctx.current_path, path);
-    strcpy(ctx.current_window_title, "imgvw | ");
+    strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
     if (ctx.current_tex.width != 0) {
@@ -85,20 +85,22 @@ u0 Load(char *path) {
     // before it's fully loaded :)
     i32 wid, hei, channels;
     stbi_info(path, &wid, &hei, &channels);
+
     ctx.current_tex.width = wid;
     ctx.current_tex.height = hei;
-    Camera_FitWindow();
+    ctx.tex_channels = channels;
 
-    // Our LoadTexture has to happen on our `main` thread, due to opengl
-    // stuff. So what that concretely means is that we need to move our
-    // majority logic (input, python, etc) onto another thread, and any
-    // rendering / loading stuff has gotta be main thread. We should just
-    // have a bool that gets set when the current_path has been changed
-    // to load a new file
+    struct _stat info;
+    if (_stat(ctx.current_path, &info) == 0) {
+        ctx.tex_fsize = info.st_size;
+    } else {
+        ctx.tex_fsize = 0;
+    }
+
+    Camera_FitWindow();
 
     ctx.tex_need_load = 1;
 
-    // ctx.current_tex = LoadTexture(path);
     SetWindowTitle(ctx.current_window_title);
 }
 
@@ -112,7 +114,7 @@ u0 Rotate(f32 amount) {
     ctx.target_camera.target = mwp;
 
     //TODO SHIFT_FINE should be a setting
-    ctx.target_camera.rotation += amount * GetFrameTime() * 125.0f * settings.rotation_speed * SHIFT_FINE;
+    ctx.target_camera.rotation += amount * ctx.frame_time * 125.0f * settings.rotation_speed * SHIFT_FINE;
 }
 
 u0 Rotate_By_Scroll() {
@@ -123,14 +125,17 @@ u0 Rotate_By_Mouse() {
     // Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
     // target_camera.offset = GetMousePosition();
     // target_camera.target = mwp;
-    ctx.target_camera.rotation += GetMouseDelta().x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE * (
-        GetFrameTime() * 100.0f * settings.rotation_speed);
+    ctx.target_camera.rotation += ctx.mouse_delta.x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE * (
+        ctx.frame_time * 100.0f * settings.rotation_speed);
 }
 
 u0 Camera_Home_Internal(u8 reset_zoom) {
     ctx.target_camera.offset = V2f(GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f);
     ctx.target_camera.target = V2f(0, 0);
-    ctx.target_camera.rotation = 0;
+
+    // Round the camera rotation to nearest 360
+    f32 rot = ctx.target_camera.rotation;
+    ctx.target_camera.rotation = roundf(rot / 360.f) * 360.f;
 
     if (!reset_zoom) {
         return;
@@ -250,8 +255,6 @@ u0 Copy_To_Clipboard() {
     free(bgraData);
 }
 
-//TODO move to context
-
 LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_CONTEXTMENU: {
@@ -262,11 +265,17 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 
                 //TODO make this extensible via configuration | script
                 // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
+
+                AppendMenu(hMenu, MF_STRING, 3, "Focus");
+
+                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
                 AppendMenu(hMenu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, 1, "Keep on top");
                 AppendMenu(hMenu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, 2, "Undecorated");
+                AppendMenu(hMenu, settings.properties_show ? MF_CHECKED : MF_UNCHECKED, 4, "Show Properties");
 
                 // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
-                AppendMenu(hMenu, MF_STRING, 3, "Focus");
+
+
                 AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 
                 // AppendMenu(hMenu, MF_STRING, SC_MOVE, "Move");
@@ -278,6 +287,8 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 } else {
                     AppendMenu(hMenu, MF_STRING, SC_MAXIMIZE, "Maximize");
                 }
+
+
                 AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
                 AppendMenu(hMenu, MF_STRING, SC_CLOSE, "Close");
 
@@ -320,6 +331,10 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                     break;
                 case 3:
                     Camera_Home_ResetZoom();
+                    break;
+                case 4:
+                    // Show image properties
+                    settings.properties_show = !settings.properties_show;
                     break;
                 case SC_MOVE:
                     SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
@@ -374,4 +389,69 @@ u0 Window_On_Top(void *state_ptr) {
 
     u8 state = *(u8 *) state_ptr;
     settings.on_top = state;
+}
+
+const char *pixel_format_to_str_s(PixelFormat format, char *buffer, i32 n) {
+    const char *formatStr = NULL;
+
+    switch (format) {
+        case PIXELFORMAT_UNCOMPRESSED_GRAYSCALE: formatStr = "UNCOMPRESSED_GRAYSCALE";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA: formatStr = "UNCOMPRESSED_GRAY_ALPHA";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R5G6B5: formatStr = "UNCOMPRESSED_R5G6B5";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R8G8B8: formatStr = "UNCOMPRESSED_R8G8B8";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R5G5B5A1: formatStr = "UNCOMPRESSED_R5G5B5A1";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R4G4B4A4: formatStr = "UNCOMPRESSED_R4G4B4A4";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R8G8B8A8: formatStr = "UNCOMPRESSED_R8G8B8A8";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R32: formatStr = "UNCOMPRESSED_R32";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R32G32B32: formatStr = "UNCOMPRESSED_R32G32B32";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: formatStr = "UNCOMPRESSED_R32G32B32A32";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R16: formatStr = "UNCOMPRESSED_R16";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R16G16B16: formatStr = "UNCOMPRESSED_R16G16B16";
+            break;
+        case PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: formatStr = "UNCOMPRESSED_R16G16B16A16";
+            break;
+        case PIXELFORMAT_COMPRESSED_DXT1_RGB: formatStr = "COMPRESSED_DXT1_RGB";
+            break;
+        case PIXELFORMAT_COMPRESSED_DXT1_RGBA: formatStr = "COMPRESSED_DXT1_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_DXT3_RGBA: formatStr = "COMPRESSED_DXT3_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_DXT5_RGBA: formatStr = "COMPRESSED_DXT5_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_ETC1_RGB: formatStr = "COMPRESSED_ETC1_RGB";
+            break;
+        case PIXELFORMAT_COMPRESSED_ETC2_RGB: formatStr = "COMPRESSED_ETC2_RGB";
+            break;
+        case PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA: formatStr = "COMPRESSED_ETC2_EAC_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_PVRT_RGB: formatStr = "COMPRESSED_PVRT_RGB";
+            break;
+        case PIXELFORMAT_COMPRESSED_PVRT_RGBA: formatStr = "COMPRESSED_PVRT_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA: formatStr = "COMPRESSED_ASTC_4x4_RGBA";
+            break;
+        case PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA: formatStr = "COMPRESSED_ASTC_8x8_RGBA";
+            break;
+        default: formatStr = "UNKNOWN_FORMAT";
+            break;
+    }
+
+    // Copy the string to the buffer, ensuring it doesn't exceed the buffer size
+    if (buffer && n > 0) {
+        strncpy(buffer, formatStr, n - 1);
+        buffer[n - 1] = '\0'; // Ensure null-termination
+    }
+
+    return buffer;
 }

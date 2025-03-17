@@ -13,11 +13,13 @@ typedef struct {
     u8 undecorated;
     u8 maximized;
 
-
     f32 rotation_speed;
     f32 zoom_speed;
 
     u8 python_scripting;
+
+    u8 properties_show; // TODO put in JSON
+    char * program_font_path; // TODO put in JSON
 
     f32 lerpSpeed_pan;
     f32 lerpSpeed_zoom;

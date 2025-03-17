@@ -3,7 +3,7 @@
     "padding": 10.0,
     "on_top": false,
     "undecorated": false,
-    "rotation_speed": 1.0,
+    "rotation_speed": 920.0,
     "python_scripting": true,
     "zoom_speed": 1.0,
     "lerpSpeed_pan": 30.0,
@@ -13,6 +13,7 @@
     "max_window_h": 640,
     "min_window_w": 160,
     "min_window_h": 160,
+    "texture_filter": "TRILINEAR",
     "bg_color": {
       "r": 0,
       "g": 0,
