@@ -72,35 +72,6 @@ u0 python_run_script_func(char **python_scripts_array, i32 python_scripts_count,
             Py_DECREF(rags);
         }
     }
-
-    // i32 i = 0;
-    // for (; i < python_scripts_count; i++) {
-    //     // Get the name of the python script (no .py ext)
-    //     PyObject *name = PyUnicode_FromString(python_scripts_array[i]);
-    //
-    //     // Load the actual python script.. TODO We should cache this load
-    //     PyObject *mod = PyImport_Import(name);
-    //     Py_DecRef(name);
-    //
-    //     // Add C functions // TODO we should also cache this
-    //     PyModule_AddFunctions(mod, ExposedFunctions);
-    //
-    //     // Find our function
-    //     PyObject *func = PyObject_GetAttrString(mod, func_name);
-    //
-    //     // Send no arguments
-    //     PyObject *rags = PyTuple_New(0);
-    //
-    //     if (func && rags) {
-    //         // Call the function
-    //         PyObject *result = PyObject_CallObject(func, rags);
-    //
-    //         Py_DecRef(func);
-    //         Py_DecRef(rags);
-    //         Py_DecRef(result);
-    //     }
-    //     Py_DecRef(mod);
-    // }
 }
 
 u0 load_python(cJSON *json, char ***out_scripts, i32 *out_count) {

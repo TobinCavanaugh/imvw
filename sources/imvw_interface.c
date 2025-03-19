@@ -4,7 +4,9 @@
 
 #include "imvw_interface.h"
 
+#include <dirent.h>
 #include <external/stb_image.h>
+#include "slfile.h"
 
 
 // TODO DUPLICATED SHIFT_FINE
@@ -454,4 +456,78 @@ const char *pixel_format_to_str_s(PixelFormat format, char *buffer, i32 n) {
     }
 
     return buffer;
+}
+
+int is_image(const char *filename) {
+    int width, height, channels;
+
+    // Attempt to read image info
+    if (stbi_info(filename, &width, &height, &channels)) {
+        return 1; // It's an image
+    }
+    return 0; // Not an image
+}
+
+
+u8 self_found = 0;
+char prev_sib[PATH_MAX];
+char next_sib[PATH_MAX];
+
+u0 open_sib_iterate(slfile_t *file) {
+    // If we just found our guy
+    if (strcmp(ctx.current_path, file->full_path) == 0) {
+        self_found = 1;
+        goto END;
+    }
+
+NEXT:
+    // File after the one we found
+    if (self_found == 1 && is_image(file->full_path)) {
+        strcpy(next_sib, file->full_path);
+        self_found = 2;
+        goto END;
+    }
+
+PREV:
+    // File before the one we found
+    if (!self_found && is_image(file->full_path)) {
+        strcpy(prev_sib, file->full_path);
+        goto END;
+    }
+
+END:
+    slfile_free(file);
+}
+
+u0 Open_Sibling(f32 *direction) {
+    SPIN_IF_TEX_LOADING;
+
+    char dir[MAX_PATH];
+    GetFullPathName(ctx.current_path, MAX_PATH, dir, NULL);
+
+    printf("fp: `%s`\n", dir);
+    PathRemoveFileSpec(dir);
+    strcat(dir, "\\");
+
+    self_found = 0;
+    prev_sib[0] = 0;
+    next_sib[0] = 0;
+
+    dir_iterate(dir,
+                open_sib_iterate,
+                (file_skip_flags){
+                    .keep_nav = 0, .skip_hidden = 1, .recurse = 0, .skip_files = 0, .skip_directories = 1
+                });
+
+    if (*direction > 0) {
+        printf(">>>");
+        if (next_sib[0]) {
+            Load(next_sib);
+        }
+    } else if (*direction < 0) {
+        printf("<<<");
+        if (prev_sib[0]) {
+            Load(prev_sib);
+        }
+    }
 }

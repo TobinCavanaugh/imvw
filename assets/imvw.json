@@ -90,6 +90,16 @@
       "func": "Edit_Settings_Json",
       "press": "X",
       "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "Open_Sibling",
+      "press": "RIGHT",
+      "arg": 1
+    },
+    {
+      "func": "Open_Sibling",
+      "press": "LEFT",
+      "arg": -1
     }
   ]
 }

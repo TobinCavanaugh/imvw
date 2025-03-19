@@ -74,4 +74,6 @@ u0 Window_On_Top(void *state_ptr);
 
 const char *pixel_format_to_str_s(PixelFormat format, char *buffer, i32 n);
 
+u0 Open_Sibling(f32 *direction);
+
 #endif //IMVW_INTERFACE_H

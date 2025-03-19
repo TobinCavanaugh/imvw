@@ -77,6 +77,8 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
         for (; i < array_size; i++) {
             cJSON *action = cJSON_GetArrayItem(actions, i);
             cJSON *func = cJSON_GetObjectItem(action, "func");
+
+            //TODO implement a key repeat like aaaaaaaaaaaaaaaaaaaaaa
             cJSON *press = cJSON_GetObjectItem(action, "press");
             cJSON *hold = cJSON_GetObjectItem(action, "hold");
             cJSON *modifier = cJSON_GetObjectItem(action, "modifier");
@@ -128,7 +130,10 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
 
             key_action.arg_type = ARG_TYPE_NONE;
             if (arg) {
-                if (cJSON_IsBool(arg)) {
+                if (cJSON_IsNumber(arg)) {
+                    key_action.arg_type = ARG_TYPE_NUM;
+                    key_action.arg_num = (f32) cJSON_GetNumberValue(arg);
+                } else if (cJSON_IsBool(arg)) {
                     key_action.arg_type = ARG_TYPE_BOOL;
                     key_action.arg_bool = (u64) cJSON_IsTrue(arg);
                 } else if (cJSON_IsString(arg)) {

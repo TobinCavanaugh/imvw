@@ -149,7 +149,12 @@ KeyboardKey GetKeyFromName(char *name) {
     }
 
     i32 i = 0;
-    for (; i < ARRAY_LEN(keyboard_keys); i++) {
+
+    for (; i < strlen(name); i++) {
+        name[i] = toupper(name[i]);
+    }
+
+    for (i = 0; i < ARRAY_LEN(keyboard_keys); i++) {
         if (strcmp(name, keyboard_keys[i].name) == 0) {
             return keyboard_keys[i].key;
         }
@@ -158,14 +163,19 @@ KeyboardKey GetKeyFromName(char *name) {
     return KEY_NULL;
 }
 
-MouseButton GetButtonFromName(const char *name) {
+MouseButton GetButtonFromName(char *name) {
     char *pre = "MOUSE_";
     if (strncmp(pre, name, strlen(pre)) == 0) {
         name += strlen(pre);
     }
 
     i32 i = 0;
-    for (; i < ARRAY_LEN(mouse_buttons); i++) {
+
+    for (; i < strlen(name); i++) {
+        name[i] = toupper(name[i]);
+    }
+
+    for (i = 0; i < ARRAY_LEN(mouse_buttons); i++) {
         if (strcmp(name, mouse_buttons[i].name) == 0) {
             return mouse_buttons[i].key;
         }

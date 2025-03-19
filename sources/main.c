@@ -134,7 +134,7 @@ f32 get_system_font_size() {
     metrics.cbSize = sizeof(NONCLIENTMETRICS);
 
     // This is guesstimation, but decent
-    f32 fontsize = 8;
+    f32 fontsize = 6;
     if (SystemParametersInfo(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0)) {
         fontsize += -F32(metrics.lfMessageFont.lfHeight);
     }
@@ -159,6 +159,7 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
                   font_size, settings.bg_color);
     EndBlendMode();
 
+    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
     DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
 
     return font_size;
@@ -194,6 +195,7 @@ int main(char argc, char **argv) {
     flut_add(Enable_Python);
     flut_add(Disable_Python);
     flut_add(Open_File_Dialog);
+    flut_add(Open_Sibling);
     flut_add(printf);
 
     ctx.target_camera = ctx.real_camera;
@@ -261,13 +263,16 @@ int main(char argc, char **argv) {
 
     // TODO this loading might be possible async
     char *win_font_name = "C:\\Windows\\Fonts\\segoeui.ttf";
-    Font rlfont = LoadFontEx(win_font_name, 128, NULL, 0);
+    Font rlfont = LoadFontEx(win_font_name, 256, NULL, 0);
 
     if (settings.program_font_path != NULL && strlen(settings.program_font_path) > 0) {
-        Font custom_font = LoadFont(settings.program_font_path);
+        Font custom_font = LoadFontEx(settings.program_font_path, 256, NULL, 0);
         UnloadFont(rlfont);
         rlfont = custom_font;
     }
+
+    GenTextureMipmaps(&rlfont.texture);
+    SetTextureFilter(rlfont.texture, TEXTURE_FILTER_TRILINEAR);
 
     ctx.current_font = rlfont;
 
@@ -290,7 +295,7 @@ int main(char argc, char **argv) {
         }
 
         ctx.mouse_pos = GetMousePosition();
-        ctx.mouse_delta = GetMouseDelta();
+        ctx.mouse_delta = GetMouseDelta(); //TODO this doesnt update out of window
 
         // TODO Place in thread to auto reload settings etc.
         // DWORD result;
@@ -328,16 +333,16 @@ int main(char argc, char **argv) {
         }
 
         // Have this navigate images
-        if (IsKeyPressed(KEY_RIGHT)) {
-            ++index;
-            Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
-            Camera_Home_ResetZoom();
-        }
-        if (IsKeyPressed(KEY_LEFT)) {
-            --index;
-            Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
-            Camera_Home_ResetZoom();
-        }
+        // if (IsKeyPressed(KEY_RIGHT)) {
+        //     ++index;
+        //     Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
+        //     Camera_Home_ResetZoom();
+        // }
+        // if (IsKeyPressed(KEY_LEFT)) {
+        //     --index;
+        //     Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
+        //     Camera_Home_ResetZoom();
+        // }
 
         // Right click thing
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
@@ -420,6 +425,7 @@ int main(char argc, char **argv) {
                 ctx.tex_loading = 0, ctx.tex_need_load = 0;
 
                 Camera_FitWindow();
+                Camera_Home_Internal(true);
             }
 
             // Set the filter
