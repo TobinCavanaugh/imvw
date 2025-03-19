@@ -9,7 +9,7 @@
 
 
 PyObject *test_func(PyObject *self, PyObject *args) {
-    printf("RAN ME");
+    printf("Ran from python\n");
     return PyTuple_New(0);
 }
 

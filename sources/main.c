@@ -17,14 +17,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-#include <external/stb_image.h>
-
 #include "raymath.h"
 #include "GLFW/glfw3.h"
 
 #include "dialect.h"
 #include "flut.h"
-#include "keyboard_key.h"
 #include "tinyfiledialogs.h"
 #include "settings.h"
 #include "actions_loader.h"
@@ -32,6 +29,8 @@
 #include "python_loader.h"
 #include "context_t.h"
 #include "imvw_interface.h"
+#include "font_loader.h"
+#include "tex_loader.h"
 
 #define nameof(a) #a
 
@@ -68,7 +67,11 @@ context_t ctx = {
     .current_window_title = ""
 };
 
+context_t prev_ctx;
+
 u0 thread_playerinput() {
+    prev_ctx = ctx;
+    ctx.one = 1;
     while (1) {
         f128 frame_start = GetTime();
         /*Run through all of the key actions*/
@@ -145,6 +148,10 @@ f32 get_system_font_size() {
 char properties_working[PATH_MAX];
 
 f32 draw_properties(f32 properties_line, char *format, ...) {
+    if (ctx.current_font.texture.height == 0) {
+        return 0;
+    }
+
     // Get our varargs
     va_list args;
     va_start(args, format);
@@ -169,6 +176,8 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
 
 //TODO add support for reloading from json in program runtime
 int main(char argc, char **argv) {
+    // COMPILER_ASSERT(sizeof(f32) == 4);
+
     SetExitKey(KEY_NULL);
 
     // Have no console window
@@ -180,6 +189,9 @@ int main(char argc, char **argv) {
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
+
+    ctx.main_window = glfwGetCurrentContext();
+
     SetTargetFPS(60);
 
     flut_add(exit), flut_add(puts);
@@ -210,8 +222,8 @@ int main(char argc, char **argv) {
         fprintf(stderr, "Settings file `imvw.json` not found... Generating a default one.\n");
         // TODO need a default settings file. Easiest just to string literal json file.
     }
-    HANDLE file_watch = FindFirstChangeNotificationA(ASSETS_PATH"imvw.json", FALSE,
-                                                     FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
+    // HANDLE file_watch = FindFirstChangeNotificationA(ASSETS_PATH"imvw.json", FALSE,
+    //                                                  FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
     FILE *file = fopen(settings_path, "rb");
 
     // Get the size of the file
@@ -261,21 +273,6 @@ int main(char argc, char **argv) {
         Load(ASSETS_PATH"test2.png");
     }
 
-    // TODO this loading might be possible async
-    char *win_font_name = "C:\\Windows\\Fonts\\segoeui.ttf";
-    Font rlfont = LoadFontEx(win_font_name, 256, NULL, 0);
-
-    if (settings.program_font_path != NULL && strlen(settings.program_font_path) > 0) {
-        Font custom_font = LoadFontEx(settings.program_font_path, 256, NULL, 0);
-        UnloadFont(rlfont);
-        rlfont = custom_font;
-    }
-
-    GenTextureMipmaps(&rlfont.texture);
-    SetTextureFilter(rlfont.texture, TEXTURE_FILTER_TRILINEAR);
-
-    ctx.current_font = rlfont;
-
 
     Camera_Home_ResetZoom();
 
@@ -285,8 +282,14 @@ int main(char argc, char **argv) {
         python_run_script_func(python_scripts_array, python_scripts_count, "start");
     }
 
+    imvw_font_load();
+
     pthread_t pt;
     pthread_create(&pt, NULL, thread_playerinput, NULL);
+
+
+    // We do a pre-render step so the window never flashes white
+    goto RENDER;
 
     // Program loop
     while (!WindowShouldClose()) {
@@ -331,18 +334,6 @@ int main(char argc, char **argv) {
         if (IsWindowState(FLAG_WINDOW_UNDECORATED) != settings.undecorated) {
             settings.undecorated ? SetWindowState(FLAG_WINDOW_UNDECORATED) : ClearWindowState(FLAG_WINDOW_UNDECORATED);
         }
-
-        // Have this navigate images
-        // if (IsKeyPressed(KEY_RIGHT)) {
-        //     ++index;
-        //     Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
-        //     Camera_Home_ResetZoom();
-        // }
-        // if (IsKeyPressed(KEY_LEFT)) {
-        //     --index;
-        //     Load(TextFormat("%stest%d.png", ASSETS_PATH, index));
-        //     Camera_Home_ResetZoom();
-        // }
 
         // Right click thing
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
@@ -405,14 +396,27 @@ int main(char argc, char **argv) {
                                         dt * settings.lerpSpeed_rotate);
         ctx.real_camera.zoom = max(Lerp(ctx.real_camera.zoom, ctx.target_camera.zoom, dt * settings.lerpSpeed_zoom), 0);
 
+        roundCamera2DValues(&ctx.real_camera, 0.001f);
+        roundCamera2DValues(&ctx.target_camera, 0.001f);
+
+
+        // if (context_equals(&ctx, &prev_ctx)) {
+        //     printf("skip\n");
+        //     goto END_OF_FRAME;
+        // }
 
         /// Rendering
     RENDER:
         BeginDrawing();
         BeginMode2D(ctx.real_camera); {
             // Load image if needed
-            if (ctx.tex_need_load) {
-                ctx.tex_loading = 1;
+            if (ctx.tex_need_load && !ctx.tex_loading) {
+                // ctx.tex_loading = 1;
+
+                if (ctx.current_tex.width != 0) {
+                    //TODO is it possible to async UnloadTexture? Seems unlikely
+                    UnloadTexture(ctx.current_tex);
+                }
 
                 // Clear the background, and display it
                 ClearBackground(settings.bg_color);
@@ -420,16 +424,17 @@ int main(char argc, char **argv) {
                 BeginDrawing();
 
                 // Load the image here
-                ctx.current_tex = LoadTexture(ctx.current_path);
-                GenTextureMipmaps(&ctx.current_tex);
-                ctx.tex_loading = 0, ctx.tex_need_load = 0;
+                // ctx.current_tex = LoadTexture(ctx.current_path);
+                // GenTextureMipmaps(&ctx.current_tex);
+                // ctx.tex_loading = 0, ctx.tex_need_load = 0;
+                imvw_tex_load();
 
                 Camera_FitWindow();
                 Camera_Home_Internal(true);
             }
 
             // Set the filter
-            if (ctx.tex_need_filter) {
+            if (ctx.tex_need_filter && !ctx.tex_loading && !ctx.tex_need_load) {
                 SetTextureFilter(ctx.current_tex, settings.texture_filter);
                 ctx.tex_need_filter = 0;
             }
@@ -464,9 +469,14 @@ int main(char argc, char **argv) {
         }
 
         // Make this optional
-        DrawFPS(4, GetScreenHeight() - 20);
+        // DrawFPS(4, GetScreenHeight() - 20);
 
         EndDrawing();
+
+    END_OF_FRAME:
+
+
+
     }
 
     CloseWindow();

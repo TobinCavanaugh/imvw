@@ -78,9 +78,6 @@ u0 Load(char *path) {
     strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
-    if (ctx.current_tex.width != 0) {
-        UnloadTexture(ctx.current_tex);
-    }
 
     // Load the info of the image, assign it to our current texture then fit
     // the window correctly. This means our window fits the size of our tex
@@ -513,11 +510,16 @@ u0 Open_Sibling(f32 *direction) {
     prev_sib[0] = 0;
     next_sib[0] = 0;
 
-    dir_iterate(dir,
-                open_sib_iterate,
+    dir_iterate(dir, open_sib_iterate,
                 (file_skip_flags){
-                    .keep_nav = 0, .skip_hidden = 1, .recurse = 0, .skip_files = 0, .skip_directories = 1
+                    .keep_nav = 0, .skip_hidden = 1,
+                    .recurse = 0, .skip_files = 0,
+                    .skip_directories = 1
                 });
+
+    //TODO
+    // Somehow untie this from the loading or allow for cancelling currently
+    // loading file
 
     if (*direction > 0) {
         printf(">>>");

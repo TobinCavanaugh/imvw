@@ -20,8 +20,19 @@
 #define i16 __INT16_TYPE__
 #define i32 __INT32_TYPE__
 #define i64 __INT64_TYPE__
+
 #define f32 float
+#define f64 double
 #define f128 long double
+
+// If using C11
+#if __STDC_VERSION__ >= 201112L
+_Static_assert(sizeof(f32) == 4);
+_Static_assert(sizeof(f64) == 8);
+_Static_assert(sizeof(f128) == 16);
+#endif
+
+/* Epsilon macros */
 
 /* Maximum values for unsigned types */
 #define u8_MAX __UINT8_MAX__
