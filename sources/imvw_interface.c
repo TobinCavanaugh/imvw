@@ -121,11 +121,11 @@ u0 Rotate_By_Scroll() {
 }
 
 u0 Rotate_By_Mouse() {
-    // Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), real_camera);
-    // target_camera.offset = GetMousePosition();
-    // target_camera.target = mwp;
-    ctx.target_camera.rotation += ctx.mouse_delta.x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE * (
-        ctx.frame_time * 100.0f * settings.rotation_speed);
+    ctx.target_camera.rotation += ctx.mouse_delta.x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE *
+            (ctx.frame_time * 100.0f * settings.rotation_speed);
+
+    // ctx.target_camera.rotation += ctx.mouse_delta.y / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE *
+    //         (ctx.frame_time * 100.0f * settings.rotation_speed);
 }
 
 u0 Camera_Home_Internal(u8 reset_zoom) {

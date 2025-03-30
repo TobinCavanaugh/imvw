@@ -33,7 +33,8 @@ add_executable(${PROJECT_NAME}
         sources/imvw_interface.h
         sources/context_t.h
         sources/imvw_init.c
-        sources/imvw_init.h)
+        sources/imvw_init.h
+)
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_INCLUDE})
 

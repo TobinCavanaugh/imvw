@@ -2,12 +2,12 @@
 // Created by tobin on 12/15/24.
 //
 
+#include "raylib.h"
 #include <ctype.h>
 #include <stdint.h>
-#include "raylib.h"
 
-#ifndef CAA_EPIDEMIC_DIALECT_H
-#define CAA_EPIDEMIC_DIALECT_H
+#ifndef TOBIN_DIALECT
+#define TOBIN_DIALECT
 
 #define u0 void
 
@@ -62,10 +62,12 @@ _Static_assert(sizeof(f128) == 16);
 #define F32(__a) ((f32)(__a))
 #define F128(__a) ((f128)(__a))
 
+#ifdef RAYLIB_H
 #define V2f(a, b) (Vector2) {a, b}
 #define v2f Vector2
 #define V3f(a, b, c) (Vector3) {a, b, c}
 #define v3f Vector3
+#endif
 
 #define NO_OP ({ 0; })
 
@@ -81,4 +83,4 @@ static u0 stoup(char *str) {
     }
 }
 
-#endif //CAA_EPIDEMIC_DIALECT_H
+#endif //TOBIN_DIALECT

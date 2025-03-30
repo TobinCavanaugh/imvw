@@ -7,40 +7,48 @@
 
 #include "dialect.h"
 
+#define LOG_FONT "FONT: "
+
 extern context_t ctx;
 extern settings_t settings;
 
-GLFWwindow *font_load_wind = NULL;
-
-u0 _internal_font_load(void *) {
-    // font_load_wind = glfwGetCurrentContext();
-    glfwMakeContextCurrent(font_load_wind);
-
-    char *win_font_name = "C:\\Windows\\Fonts\\segoeui.ttf";
-    Font rlfont = LoadFontEx(win_font_name, 256, NULL, 0);
+static u0 imvw_font_load() {
+    Font rlfont = {0};
 
     // If we have a custom font to load
     if (settings.program_font_path != NULL && strlen(settings.program_font_path) > 0) {
         Font custom_font = LoadFontEx(settings.program_font_path, 256, NULL, 0);
         UnloadFont(rlfont);
         rlfont = custom_font;
+
+        if (!rlfont.texture.width) {
+            printf(LOG_FONT "Failed to load custom font from `%s`. Falling back to system font.\n",
+                   settings.program_font_path);
+        } else {
+            printf(LOG_FONT "Loaded custom font from `%s`\n", settings.program_font_path);
+        }
     }
 
-    GenTextureMipmaps(&rlfont.texture);
-    SetTextureFilter(rlfont.texture, TEXTURE_FILTER_TRILINEAR);
+    if (!rlfont.texture.width) {
+        char *win_font_name = "C:\\Windows\\Fonts\\segoeui.ttf";
+        rlfont = LoadFont(win_font_name);
+
+        if (!rlfont.texture.width) {
+            printf(LOG_FONT"Failed to load system font from `%s`. Falling back to default Raylib font.\n",
+                   win_font_name);
+        } else {
+            printf(LOG_FONT"Loaded system font from `%s`\n", win_font_name);
+        }
+    }
+
+    if (!rlfont.texture.width) {
+        rlfont = GetFontDefault();
+        printf(LOG_FONT"Loaded Raylib default font\n");
+    }
 
     ctx.current_font = rlfont;
-
-    glfwDestroyWindow(font_load_wind);
-}
-
-static u0 imvw_font_load() {
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    font_load_wind = glfwCreateWindow(1, 1, "Font Loader", NULL, ctx.main_window);
-
-    pthread_t thr;
-    pthread_create(&thr, NULL, _internal_font_load, NULL);
-    pthread_detach(thr);
+    GenTextureMipmaps(&ctx.current_font.texture);
+    SetTextureFilter(ctx.current_font.texture, TEXTURE_FILTER_TRILINEAR);
 }
 
 #endif //FONT_LOADER_H

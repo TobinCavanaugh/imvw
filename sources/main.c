@@ -1,3 +1,5 @@
+// #define PLATFORM_DESKTOP_SDL 1
+
 #include "raylib.h"
 // #define Rectangle RECTANGLE
 // #define CloseWindow RLCloseWindow
@@ -17,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <external/miniaudio.h>
+
 #include "raymath.h"
 #include "GLFW/glfw3.h"
 
@@ -67,13 +71,42 @@ context_t ctx = {
     .current_window_title = ""
 };
 
+#include <windows.h>
+
+f128 getTimeHD_ms() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000);
+}
+
+u0 sleep_ms(DWORD milliseconds) {
+    // Create a waitable timer
+    HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
+    if (timer == NULL) {
+        return;
+    }
+
+    // Set timer to negative value for relative time
+    LARGE_INTEGER li;
+    li.QuadPart = -1 * (10000LL * milliseconds); // Convert to 100-nanosecond intervals
+
+    // Set the timer
+    if (SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
+        // Wait for the timer to expire
+        WaitForSingleObject(timer, INFINITE);
+    }
+
+    // Close the timer handle
+    CloseHandle(timer);
+}
+
 context_t prev_ctx;
 
 u0 thread_playerinput() {
     prev_ctx = ctx;
     ctx.one = 1;
     while (1) {
-        f128 frame_start = GetTime();
+        f128 frame_start = getTimeHD_ms();
         /*Run through all of the key actions*/
     KEY_ACTIONS: {
             i32 i = 0;
@@ -113,22 +146,21 @@ u0 thread_playerinput() {
         }
 
         // Sleep for time to ensure input framerate doesn't exceed 60fps
-
-
-        f128 frame_end = GetTime();
-        f32 elapsed = frame_end - frame_start;
-
-        ctx.frame_time = elapsed;
+        f128 frame_end = getTimeHD_ms();
+        f128 elapsed = frame_end - frame_start;
 
         //TODO add config for target framerate
         //TODO fix framerate independence issues in imvw_interface.h
 
-        f32 target_frametime = 16;
-        i64 wait_ms = (i64) round(target_frametime - (elapsed * 1000));
+        f32 target_frametime_ms = 16.67f; // More precise for 60fps
+        f32 sleeptime = target_frametime_ms - elapsed;
 
-        if (wait_ms > 0) {
-            Sleep(wait_ms);
+        if (sleeptime > 0) {
+            sleep_ms(I32(sleeptime));
         }
+
+        f128 total_elapsed = getTimeHD_ms() - frame_start;
+        ctx.frame_time = F128(total_elapsed) / 1000.;
     }
 }
 
@@ -145,7 +177,6 @@ f32 get_system_font_size() {
     return fontsize;
 }
 
-char properties_working[PATH_MAX];
 
 f32 draw_properties(f32 properties_line, char *format, ...) {
     if (ctx.current_font.texture.height == 0) {
@@ -156,39 +187,95 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
     va_list args;
     va_start(args, format);
 
-    // i32 font_size = I32(F32(GetScreenHeight()) / 25.); //TODO setting for font size
-    f32 font_size = get_system_font_size();
-
+    // PATH_MAX is a reasonable max length
+    static char properties_working[PATH_MAX];
     vsnprintf(properties_working, PATH_MAX, format, args);
 
+    // Add a space before the string to improve left padding
+    memmove(properties_working + 1, properties_working, strlen(properties_working) + 1);
+    properties_working[0] = ' ';
+
+    f32 font_size = get_system_font_size();
+
+    // Draw boxes behind the text
     BeginBlendMode(BLEND_MULTIPLIED);
     DrawRectangle(0, properties_line, (i32) MeasureTextEx(ctx.current_font, properties_working, font_size, 0).x,
                   font_size, settings.bg_color);
     EndBlendMode();
 
-    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
+    // Draw the actual text
     DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
 
     return font_size;
 }
 
+u0 load_all() {
+    //INFO: Setting this up to load asynchronously will not help our boot times.
+    // the core issue with slow startups (~300ms) is due to some Shintel iris
+    // drivers issue. Particularly the ChoosePixelFormat function, which takes
+    // 1.2s (SECONDS!!) when profiled with VTune.
+    char *settings_path = ASSETS_PATH"imvw.json";
+    if (!FileExists(settings_path)) {
+        fprintf(stderr, "Settings file `imvw.json` not found... Generating a default one.\n");
+        // TODO need a default settings file. Easiest just to string literal json file.
+    }
+    FILE *file = fopen(settings_path, "rb");
+
+    // Get the size of the file
+    fseek(file, 0, SEEK_END);
+    u64 size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Alloc all of this on the heap. Potential for issues here
+    char *json_text = malloc(size + 1);
+    if (json_text == NULL) {
+        fprintf(stderr, "Failed to allocate memory buffer of size `%llu` bytes. Your `imvw.json` file is too large!\n",
+                size + 1);
+        exit(1);
+    }
+    // Load all the text in
+    fread(json_text, 1, size, file);
+
+    // Parse the json
+    cJSON *json_data = cJSON_Parse(json_text);
+    if (json_data == NULL) {
+        fprintf(stderr, "Failed to parse `imvw.json`. cJSON error here: \n`\n%s\n`\n", cJSON_GetErrorPtr());
+    }
+
+    load_actions(json_data, &actions_array, &actions_count);
+    load_settings(json_data, &settings);
+
+    if (settings.python_scripting) {
+        Enable_Python();
+        load_python(json_data, &python_scripts_array, &python_scripts_count);
+    }
+
+    cJSON_Delete(json_data);
+    free(json_text);
+
+    imvw_font_load();
+}
+
 // TODO: Add toggle help screen function
-
-//TODO add support for reloading from json in program runtime
+// TODO: add support for reloading from json in program runtime
+// TODO: Pixel grid support
+// TODO: Construction lines background or something
+// TODO: Better zooming
 int main(char argc, char **argv) {
-    // COMPILER_ASSERT(sizeof(f32) == 4);
-
-    SetExitKey(KEY_NULL);
-
     // Have no console window
     HWND v = GetConsoleWindow();
     ShowWindow(v, SW_HIDE);
 
+    i64 start_time = timeGetTime();
+
     // Create our new window
-    // SetTraceLogLevel(LOG_ERROR);
+    SetExitKey(KEY_NULL);
     SetTraceLogLevel(LOG_WARNING);
+    // SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
+
+    load_all();
 
     ctx.main_window = glfwGetCurrentContext();
 
@@ -216,49 +303,9 @@ int main(char argc, char **argv) {
     ctx.default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
     SetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
 
-    // TODO relocate to other file. And other thread? {
-    char *settings_path = ASSETS_PATH"imvw.json";
-    if (!FileExists(settings_path)) {
-        fprintf(stderr, "Settings file `imvw.json` not found... Generating a default one.\n");
-        // TODO need a default settings file. Easiest just to string literal json file.
-    }
-    // HANDLE file_watch = FindFirstChangeNotificationA(ASSETS_PATH"imvw.json", FALSE,
-    //                                                  FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
-    FILE *file = fopen(settings_path, "rb");
+    Texture2D bg = LoadTexture(ASSETS_PATH"construction.png");
 
-    // Get the size of the file
-    fseek(file, 0, SEEK_END);
-    u64 size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // Alloc all of this on the heap. Potential for issues here
-    char *json_text = malloc(size + 1);
-    if (json_text == NULL) {
-        fprintf(stderr, "Failed to allocate memory buffer of size `%d` bytes. Your `imvw.json` file is too large!\n");
-        exit(1);
-    }
-    // Load all the text in
-    fread(json_text, 1, size, file);
-
-    // Parse the json
-    cJSON *json_data = cJSON_Parse(json_text);
-    if (json_data == NULL) {
-        fprintf(stderr, "Failed to parse `imvw.json`. cJSON error here: \n`\n%s\n`\n", cJSON_GetErrorPtr());
-    }
-
-    load_actions(json_data, &actions_array, &actions_count);
-    load_settings(json_data, &settings);
-
-    if (settings.python_scripting) {
-        Enable_Python();
-        load_python(json_data, &python_scripts_array, &python_scripts_count);
-    }
-
-    free(json_text);
-    cJSON_Delete(json_data);
-
-    //TODO }
-
+    // Load default file
     if (argc > 1) {
         char argv_path[MAX_PATH] = {'\0'};
 
@@ -282,11 +329,10 @@ int main(char argc, char **argv) {
         python_run_script_func(python_scripts_array, python_scripts_count, "start");
     }
 
-    imvw_font_load();
-
     pthread_t pt;
     pthread_create(&pt, NULL, thread_playerinput, NULL);
 
+    printf("LOG: startup_time_ms:%lld\n", timeGetTime() - start_time);
 
     // We do a pre-render step so the window never flashes white
     goto RENDER;
@@ -386,7 +432,7 @@ int main(char argc, char **argv) {
             ctx.real_camera.rotation = 0;
         }
 
-        /// Lerp camera fields
+        /// Lerp camera fields TODO: Move this to other thread maybe
         f32 dt = GetFrameTime();
         ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset,
                                              dt * settings.lerpSpeed_pan);
@@ -399,22 +445,14 @@ int main(char argc, char **argv) {
         roundCamera2DValues(&ctx.real_camera, 0.001f);
         roundCamera2DValues(&ctx.target_camera, 0.001f);
 
-
-        // if (context_equals(&ctx, &prev_ctx)) {
-        //     printf("skip\n");
-        //     goto END_OF_FRAME;
-        // }
-
         /// Rendering
     RENDER:
         BeginDrawing();
         BeginMode2D(ctx.real_camera); {
             // Load image if needed
             if (ctx.tex_need_load && !ctx.tex_loading) {
-                // ctx.tex_loading = 1;
-
+                // Unload texture time is near 0ms
                 if (ctx.current_tex.width != 0) {
-                    //TODO is it possible to async UnloadTexture? Seems unlikely
                     UnloadTexture(ctx.current_tex);
                 }
 
@@ -424,9 +462,6 @@ int main(char argc, char **argv) {
                 BeginDrawing();
 
                 // Load the image here
-                // ctx.current_tex = LoadTexture(ctx.current_path);
-                // GenTextureMipmaps(&ctx.current_tex);
-                // ctx.tex_loading = 0, ctx.tex_need_load = 0;
                 imvw_tex_load();
 
                 Camera_FitWindow();
@@ -439,37 +474,44 @@ int main(char argc, char **argv) {
                 ctx.tex_need_filter = 0;
             }
 
-            // ClearBackground((Color){0, 0, 0, 128});
             ClearBackground(settings.bg_color);
+
+            // Draw the main texture
             if (ctx.current_tex.height != 0 && !ctx.tex_need_load && !ctx.tex_loading) {
-                DrawTexture(ctx.current_tex, -ctx.current_tex.width / 2.0f, -ctx.current_tex.height / 2.0f, WHITE);
+                DrawTexture(ctx.current_tex,
+                            -I32(round(ctx.current_tex.width / 2.0f)),
+                            -I32(round(ctx.current_tex.height / 2.0f)), WHITE);
             }
+
+            // TODO construction lines
         }
         EndMode2D();
 
         // Draw image properties
         if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.height >= 0) {
             //TODO make this configurable or implemented in python mayhaps
+
+            // Property line height
             f32 pl = 0;
 
             // Draw the image dimensions
-            pl += draw_properties(pl, " %dx%d ", ctx.current_tex.width, ctx.current_tex.height);
+            pl += draw_properties(pl, "%dx%d ", ctx.current_tex.width, ctx.current_tex.height);
 
             // Draw the file size
             char buf[64 + 32];
             StrFormatByteSize64(ctx.tex_fsize, buf, sizeof(buf));
-            pl += draw_properties(pl, " %s ", buf);
+            pl += draw_properties(pl, "%s ", buf);
 
             // Draw how many channels the image has
-            pl += draw_properties(pl, " Channels: %d ", ctx.tex_channels);
+            pl += draw_properties(pl, "Channels: %d ", ctx.tex_channels);
 
             // Display pixelformat
             pixel_format_to_str_s(ctx.current_tex.format, buf, sizeof(buf));
-            pl += draw_properties(pl, " Format: %s ", buf);
-        }
+            pl += draw_properties(pl, "Format: %s ", buf);
 
-        // Make this optional
-        // DrawFPS(4, GetScreenHeight() - 20);
+            pl += draw_properties(pl, "%.5fms ", ctx.frame_time * 1000.);
+            pl += draw_properties(pl, "%fps ", 1000. / ctx.frame_time);
+        }
 
         EndDrawing();
 

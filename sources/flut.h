@@ -14,7 +14,6 @@ typedef struct {
     u0 (*func)(void *);
 } flut_func_t;
 
-//TODO possibly improve with a hashtable
 flut_func_t *flut_array = NULL;
 i32 flut_count = 0;
 
