@@ -9,8 +9,11 @@
 #include <dialect.h>
 #include <pthread.h>
 #include "GLFW/glfw3.h"
+
+#define _Atomic
 #include <stdatomic.h>
 
+#include <math.h>
 #ifdef _WIN64
 typedef __int64 LONG_PTR;
 #else
@@ -40,15 +43,11 @@ typedef struct {
     Font current_font;
 
     LONG_PTR default_wind_proc;
-
-    GLFWwindow * main_window;
+    GLFWwindow *main_window;
 
     char current_path[PATH_MAX];
     char current_window_title[PATH_MAX];
 } context_t;
-
-#include <math.h>
-
 
 static u0 roundCamera2DValues(Camera2D *camera, float epsilon) {
     if (fabs(camera->offset.x) <= epsilon) {
@@ -77,7 +76,7 @@ static u8 context_equals(const context_t *a, const context_t *b) {
         return 0;
     }
 
-    if(!a->one || !b->one) {
+    if (!a->one || !b->one) {
         return 0;
     }
 

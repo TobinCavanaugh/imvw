@@ -78,7 +78,6 @@ u0 Load(char *path) {
     strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
-
     // Load the info of the image, assign it to our current texture then fit
     // the window correctly. This means our window fits the size of our tex
     // before it's fully loaded :)
@@ -198,13 +197,13 @@ u0 Camera_Pan() {
 }
 
 u0 Open_File_Dialog() {
-    char const *lFilterPatterns[2] = {"*.png", "*.jpg"};
+    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg"};
     char *out = tinyfd_openFileDialog(
-        "Select a PNG file",
+        "Select a PNG or JPEG file",
         NULL,
-        2,
+        3,
         lFilterPatterns,
-        "*.png|*.jpg",
+        "Image Files",
         0);
 
     printf("[[%s]]", out);
@@ -214,47 +213,60 @@ u0 Open_File_Dialog() {
     }
 }
 
+u0 Open_File_Dialog_New() {
+}
+
 u0 Copy_To_Clipboard() {
+    if (ctx.current_tex.width == 0) {
+        fprintf(stderr, "IMVW : COPY : ERR : No currently existing texture\n");
+        return;
+    }
+    printf("COPYING\n");
     Image img = LoadImageFromTexture(ctx.current_tex);
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
 
-    // Ungodly
-    u8 *bgraData = malloc(img.width * img.height * 4);
-    if (bgraData == NULL) {
-        fprintf(stderr, "Failed to allocate memory for BGRA data...\n");
-        UnloadImage(img);
-        return;
-    }
-
-    // TODO What the fuck. Without this the image is BGRA
-    // This is also sick because we get to load the texture from GPU to memory
-    // then to heap then to copy. So if its a large image we're loading the
-    // image like 3 times. Fucked.
-    // Convert RGBA to BGRA
-    for (int i = 0; i < img.width * img.height; i++) {
-        bgraData[i * 4 + 0] = ((u8 *) img.data)[i * 4 + 2]; // B
-        bgraData[i * 4 + 1] = ((u8 *) img.data)[i * 4 + 1]; // G
-        bgraData[i * 4 + 2] = ((u8 *) img.data)[i * 4 + 0]; // R
-        bgraData[i * 4 + 3] = ((u8 *) img.data)[i * 4 + 3]; // A
-    }
-
-    HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, bgraData);
-    // HBITMAP hbm = CreateBitmap(img.width, img.height, 1, 32, img.data);
-
     if (OpenClipboard(GetWindowHandle())) {
-        EmptyClipboard();
-        SetClipboardData(CF_BITMAP, hbm);
-        CloseClipboard();
+        // EmptyClipboard();
+        // SetClipboardData(CF_BITMAP, hbm);
+        // CloseClipboard();
+        fprintf(stderr, "Copying to clipboard was not implemented...\n");
     } else {
         fprintf(stderr, "Failure to open clipboard...\n");
     }
 
-    DeleteObject(hbm);
-    UnloadImage(img);
-    free(bgraData);
+    // UnloadImage(img);
 }
 
+u0 Duplicate_Instance(u0) {
+    // path for self exe, path for open program, + extra for args etc.
+    char path[MAX_PATH * 3];
+    GetModuleFileName(NULL, path, MAX_PATH);
+
+    strcat(path, " ");
+    strcat(path, "\"");
+    strcat(path, ctx.current_path);
+    strcat(path, "\"");
+
+    STARTUPINFO si = {0};
+    PROCESS_INFORMATION pi = {0};
+    CreateProcess(
+        NULL, // path,
+        path, // ctx.current_path,
+        NULL,
+        NULL,
+        FALSE,
+        DETACHED_PROCESS,
+        NULL,
+        NULL,
+        &si,
+        &pi);
+}
+
+// out_settings->infinite_tile = 1;
 LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    const i32 op_on_top = 1, op_undecorate = 2, op_focus = 3, op_properties = 4, op_filtering = 5, op_open = 6,
+            op_duplicate = 7;
+
     switch (uMsg) {
         case WM_CONTEXTMENU: {
             // Check if the right-click is on the title bar
@@ -262,34 +274,56 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 // Create a context menu
                 HMENU hMenu = CreatePopupMenu();
 
+                HMENU options_menu = CreatePopupMenu();
+                HMENU window_menu = CreatePopupMenu();
+
                 //TODO make this extensible via configuration | script
                 // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
 
-                AppendMenu(hMenu, MF_STRING, 3, "Focus");
+                AppendMenu(hMenu, MF_STRING, op_focus, "Focus");
 
-                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-                AppendMenu(hMenu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, 1, "Keep on top");
-                AppendMenu(hMenu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, 2, "Undecorated");
-                AppendMenu(hMenu, settings.properties_show ? MF_CHECKED : MF_UNCHECKED, 4, "Show Properties");
 
-                // { "text" : "Keep on top", "type" : "checkbox", setting:"on_top" }
-
+                AppendMenu(hMenu, settings.properties_show ? MF_CHECKED : MF_UNCHECKED, op_properties,
+                           "Show Properties");
 
                 AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 
                 // AppendMenu(hMenu, MF_STRING, SC_MOVE, "Move");
 
-                AppendMenu(hMenu, MF_STRING, SC_MINIMIZE, "Minimize");
-
-                if (IsWindowMaximized()) {
-                    AppendMenu(hMenu, MF_STRING, SC_RESTORE, "Restore");
-                } else {
-                    AppendMenu(hMenu, MF_STRING, SC_MAXIMIZE, "Maximize");
+                /*Options menu popout*/
+                {
+                    AppendMenu(options_menu, MF_STRING, op_filtering,
+                               settings.texture_filter == TEXTURE_FILTER_TRILINEAR
+                                   ? "Enable Point Filtering"
+                                   : "Enable Trilinear Filtering");
+                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT_PTR) options_menu, "Options");
                 }
 
+                /*Window menu popout*/ {
+                    AppendMenu(window_menu, MF_STRING, op_open, "Open");
+                    AppendMenu(window_menu, MF_STRING, op_duplicate, "Duplicate");
 
-                AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-                AppendMenu(hMenu, MF_STRING, SC_CLOSE, "Close");
+                    AppendMenu(window_menu, MF_SEPARATOR, 0, NULL);
+
+                    AppendMenu(window_menu, settings.on_top ? MF_CHECKED : MF_UNCHECKED, op_on_top, "Keep on top");
+                    AppendMenu(window_menu, settings.undecorated ? MF_CHECKED : MF_UNCHECKED, op_undecorate,
+                               "Undecorated");
+
+
+                    AppendMenu(window_menu, MF_SEPARATOR, 0, NULL);
+                    AppendMenu(window_menu, MF_STRING, SC_MINIMIZE, "Minimize");
+
+                    if (IsWindowMaximized()) {
+                        AppendMenu(window_menu, MF_STRING, SC_RESTORE, "Restore");
+                    } else {
+                        AppendMenu(window_menu, MF_STRING, SC_MAXIMIZE, "Maximize");
+                    }
+                    AppendMenu(window_menu, MF_STRING, SC_CLOSE, "Close");
+
+
+                    // Add the popout menu
+                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT_PTR) window_menu, "Window");
+                }
 
                 // Show the context menu
                 POINT pt;
@@ -320,39 +354,38 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case WM_COMMAND: {
-            switch (LOWORD(wParam)) {
-                case 1: // Keep on Top
-                    settings.on_top = !settings.on_top;
-                // settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
-                    break;
-                case 2: // Undecorate
-                    settings.undecorated = !settings.undecorated;
-                    break;
-                case 3:
-                    Camera_Home_ResetZoom();
-                    break;
-                case 4:
-                    // Show image properties
-                    settings.properties_show = !settings.properties_show;
-                    break;
-                case SC_MOVE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
-                    break;
-                case SC_MINIMIZE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
-                    break;
-                case SC_RESTORE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
-                    break;
-                case SC_MAXIMIZE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
-                    break;
-                case SC_CLOSE:
-                    SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
-                    break;
-                default:
-                    printf("/////////");
-                    break;
+            WORD word = LOWORD(wParam);
+            // Switch statements require literals
+            if (word == op_on_top) {
+                // Keep on Top
+                settings.on_top = !settings.on_top;
+            } else if (word == op_undecorate) {
+                // Undecorate
+                settings.undecorated = !settings.undecorated;
+            } else if (word == op_focus) {
+                Camera_Home_ResetZoom();
+            } else if (word == op_properties) {
+                // Show image properties
+                settings.properties_show = !settings.properties_show;
+            } else if (word == op_filtering) {
+                Toggle_Trilinear_Filtering();
+            } else if (word == op_open) {
+                Open_File_Dialog();
+            } else if (word == op_duplicate) {
+                Duplicate_Instance();
+                // Open_File_Dialog();
+            } else if (word == SC_MOVE) {
+                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
+            } else if (word == SC_MINIMIZE) {
+                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
+            } else if (word == SC_RESTORE) {
+                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
+            } else if (word == SC_MAXIMIZE) {
+                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+            } else if (word == SC_CLOSE) {
+                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
+            } else {
+                printf("/////////");
             }
             return 0;
         }

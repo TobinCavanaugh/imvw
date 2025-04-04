@@ -60,6 +60,7 @@ char **python_scripts_array = NULL;
 i32 python_scripts_count;
 
 /// Settings TODO implement defaults. Easiest to just json string line load
+/// TODO: Implement arguments for opening with values, i.e. --on_top 1
 settings_t settings = {0};
 
 context_t ctx = {
@@ -79,25 +80,39 @@ f128 getTimeHD_ms() {
     return (ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000);
 }
 
-u0 sleep_ms(DWORD milliseconds) {
-    // Create a waitable timer
-    HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
-    if (timer == NULL) {
-        return;
+u0 sleep_ms(i32 milliseconds) {
+    // Busy waiting for longer than 100ms doesn't make much sense
+    if (milliseconds < 1) {
+    SPIN:
+        f128 start = getTimeHD_ms();
+        while (1) {
+            if (getTimeHD_ms() - start >= milliseconds) {
+                return;
+            }
+        }
+    } else {
+        // Create a waitable timer
+        HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
+
+        // If creating the timer fails, just default to spinning
+        if (timer == NULL) {
+            goto SPIN;
+            return;
+        }
+
+        // Set timer to negative value for relative time
+        LARGE_INTEGER li;
+        li.QuadPart = -1 * (10000LL * milliseconds); // Convert to 100-nanosecond intervals
+
+        // Set the timer
+        if (SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
+            // Wait for the timer to expire
+            WaitForSingleObject(timer, INFINITE);
+        }
+
+        // Close the timer handle
+        CloseHandle(timer);
     }
-
-    // Set timer to negative value for relative time
-    LARGE_INTEGER li;
-    li.QuadPart = -1 * (10000LL * milliseconds); // Convert to 100-nanosecond intervals
-
-    // Set the timer
-    if (SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
-        // Wait for the timer to expire
-        WaitForSingleObject(timer, INFINITE);
-    }
-
-    // Close the timer handle
-    CloseHandle(timer);
 }
 
 context_t prev_ctx;
@@ -194,6 +209,9 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
     // Add a space before the string to improve left padding
     memmove(properties_working + 1, properties_working, strlen(properties_working) + 1);
     properties_working[0] = ' ';
+
+    // Add space after
+    strcat(properties_working, " ");
 
     f32 font_size = get_system_font_size();
 
@@ -320,10 +338,7 @@ int main(char argc, char **argv) {
         Load(ASSETS_PATH"test2.png");
     }
 
-
     Camera_Home_ResetZoom();
-
-    i32 index = 0;
 
     if (settings.python_scripting) {
         python_run_script_func(python_scripts_array, python_scripts_count, "start");
@@ -476,41 +491,94 @@ int main(char argc, char **argv) {
 
             ClearBackground(settings.bg_color);
 
+
+            // // TODO construction lines
+            // // Get the bounds of the visible area in world coordinates
+            // v2f ul = GetScreenToWorld2D(V2f(0, 0), ctx.real_camera);
+            // v2f br = GetScreenToWorld2D(V2f(GetScreenWidth(), GetScreenHeight()), ctx.real_camera);
+            //
+            // i32 startX = (i32) (floor(ul.x / bg.width) * bg.width);
+            // i32 startY = (i32) (floor(ul.y / bg.height) * bg.height);
+            //
+            // // Calculate the ending grid cell
+            // i32 endX = (i32) (ceil(br.x / bg.width) * bg.width);
+            // i32 endY = (i32) (ceil(br.y / bg.height) * bg.height);
+            //
+            // // Draw only the visible grid cells
+            // for (i32 x = startX; x < endX; x += bg.width) {
+            //     for (i32 y = startY; y < endY; y += bg.height) {
+            //         DrawTexture(bg, x, y, WHITE);
+            //     }
+            // }
+
             // Draw the main texture
             if (ctx.current_tex.height != 0 && !ctx.tex_need_load && !ctx.tex_loading) {
-                DrawTexture(ctx.current_tex,
-                            -I32(round(ctx.current_tex.width / 2.0f)),
-                            -I32(round(ctx.current_tex.height / 2.0f)), WHITE);
-            }
+                if (!settings.infinite_tile) {
+                    // Draw the texture regularly
+                    DrawTexture(ctx.current_tex,
+                                -I32(round(ctx.current_tex.width / 2.0f)),
+                                -I32(round(ctx.current_tex.height / 2.0f)), WHITE);
+                } else {
+                    // Get the visible area in world coordinates
+                    v2f ul = GetScreenToWorld2D(V2f(0, 0), ctx.real_camera);
+                    v2f br = GetScreenToWorld2D(V2f(GetScreenWidth(), GetScreenHeight()), ctx.real_camera);
 
-            // TODO construction lines
+                    // Calculate the starting position (floor to get complete tiles)
+                    i32 start_x = (i32) floor(ul.x / ctx.current_tex.width) * ctx.current_tex.width
+                                  - ctx.current_tex.width;
+                    i32 start_y = (i32) floor(ul.y / ctx.current_tex.height) * ctx.current_tex.height
+                                  - ctx.current_tex.height;
+
+                    // Calculate the ending position (ceil to include partial tiles)
+                    i32 end_x = (i32) ceil(br.x / ctx.current_tex.width) * ctx.current_tex.width
+                                + ctx.current_tex.width;
+                    i32 end_y = (i32) ceil(br.y / ctx.current_tex.height) * ctx.current_tex.height
+                                + ctx.current_tex.height;
+
+                    // Draw only the tiles visible on screen
+                    for (i32 xx = start_x; xx < end_x; xx += ctx.current_tex.width) {
+                        for (i32 yy = start_y; yy < end_y; yy += ctx.current_tex.height) {
+                            DrawTexture(ctx.current_tex,
+                                        xx + ctx.current_tex.width - ctx.current_tex.width / 2.f,
+                                        yy + ctx.current_tex.height - ctx.current_tex.height / 2.f,
+                                        WHITE);
+                        }
+                    }
+                }
+            }
         }
         EndMode2D();
 
         // Draw image properties
-        if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.height >= 0) {
+        if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.width > 0) {
             //TODO make this configurable or implemented in python mayhaps
 
             // Property line height
             f32 pl = 0;
 
             // Draw the image dimensions
-            pl += draw_properties(pl, "%dx%d ", ctx.current_tex.width, ctx.current_tex.height);
+            pl += draw_properties(pl, "%dx%d", ctx.current_tex.width, ctx.current_tex.height);
 
             // Draw the file size
             char buf[64 + 32];
             StrFormatByteSize64(ctx.tex_fsize, buf, sizeof(buf));
-            pl += draw_properties(pl, "%s ", buf);
+            pl += draw_properties(pl, "%s", buf);
 
             // Draw how many channels the image has
-            pl += draw_properties(pl, "Channels: %d ", ctx.tex_channels);
+            pl += draw_properties(pl, "Channels: %d", ctx.tex_channels);
 
             // Display pixelformat
             pixel_format_to_str_s(ctx.current_tex.format, buf, sizeof(buf));
-            pl += draw_properties(pl, "Format: %s ", buf);
+            pl += draw_properties(pl, "Format: %s", buf);
 
-            pl += draw_properties(pl, "%.5fms ", ctx.frame_time * 1000.);
-            pl += draw_properties(pl, "%fps ", 1000. / ctx.frame_time);
+            // Uggo
+            pl += draw_properties(pl, "Filter: %s",
+                                  settings.texture_filter == TEXTURE_FILTER_BILINEAR
+                                      ? "Bilinear"
+                                      : (settings.texture_filter == TEXTURE_FILTER_TRILINEAR ? "Trilinear" : "Point"));
+
+            pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
+            pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
         }
 
         EndDrawing();

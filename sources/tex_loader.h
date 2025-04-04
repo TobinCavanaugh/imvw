@@ -16,10 +16,9 @@ extern settings_t settings;
 typedef struct tex_load_ctx_t {
     char *path;
     Texture2D *out_tex;
-    _Atomic
-    u8 *out_loading;
-    _Atomic
-    u8 *out_need_load;
+    _Atomic u8 *out_loading;
+    _Atomic u8 *out_need_load;
+    _Atomic u8 *out_need_filter;
     GLFWwindow *glfw_window;
 } tex_load_ctx_t;
 
@@ -47,6 +46,7 @@ u0 *internal_tex_load(void *raw_ptr) {
     // Set the loaded flag
     *load_ctx->out_loading = 0;
     *load_ctx->out_need_load = 0;
+    *load_ctx->out_need_filter = 1;
 
     // Free the context
     free(load_ctx);
@@ -73,6 +73,7 @@ u0 imvw_tex_load() {
     load_ctx->out_tex = &ctx.current_tex;
     load_ctx->out_loading = &ctx.tex_loading;
     load_ctx->out_need_load = &ctx.tex_need_load;
+    load_ctx->out_need_filter = &ctx.tex_need_filter;
 
     // Create the loading window based on main context
     load_ctx->glfw_window = glfwCreateWindow(1, 1, "Tex Loader", NULL, ctx.main_window);
