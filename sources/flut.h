@@ -17,13 +17,13 @@ typedef struct {
 flut_func_t *flut_array = NULL;
 i32 flut_count = 0;
 
-u0 *_flut_add(flut_func_t func) {
-    flut_array = realloc(flut_array, sizeof(flut_func_t) * (flut_count + 1));
+u0 _flut_add(flut_func_t func) {
+    flut_array = (flut_func_t*) realloc(flut_array, sizeof(flut_func_t) * (flut_count + 1));
     flut_array[flut_count] = func;
     ++flut_count;
 }
 
-#define flut_add(function) _flut_add((flut_func_t) { .key = #function, .func = function })
+#define flut_add(function) _flut_add((flut_func_t) { .key = #function, .func = (void(*)(void*))(function) })
 
 flut_func_t *flut_find(char *key) {
     i32 i = 0;

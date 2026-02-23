@@ -5,29 +5,32 @@
 #ifndef IMVW_INTERFACE_H
 #define IMVW_INTERFACE_H
 
-#define Rectangle   WinRECTANGLE
-#define CloseWindow WinCloseWindow
+//#include "raylib_win_compat.h"
 
-#include <windows.h>
-#include <shlwapi.h>
+// #define Rectangle   WinRECTANGLE
+// #define CloseWindow WinCloseWindow
 
-#undef Rectangle
-#undef CloseWindow
+// #include <windows.h>
+// #include <shlwapi.h>
 
-#define ShowCursor  WinShowCursor
-#define LoadImage   WinLoadImage
-#define PlaySound   WinPlaySound
-#define DrawText    WinDrawText
-#define DrawTextEx  WinDrawTextEx
+// #undef Rectangle
+// #undef CloseWindow
 
-#include <context_t.h>
-#include <settings.h>
-#include <dialect.h>
+// #define ShowCursor  WinShowCursor
+// #define LoadImage   WinLoadImage
+// #define PlaySound   WinPlaySound
+// #define DrawText    WinDrawText
+// #define DrawTextEx  WinDrawTextEx
+
+#include "dialect.h"
+#include "context_t.h"
+#include "settings.h"
+#include "dialect.h"
 #include <string.h>
 #include <Python.h>
-#include <fileapi.h>
+#include "win_include.h"
+// #include <fileapi.h>
 #include <stdio.h>
-#include <tinyfiledialogs.h>
 
 extern context_t ctx;
 extern settings_t settings;
@@ -62,7 +65,9 @@ u0 Open_File_Dialog();
 
 u0 Copy_To_Clipboard();
 
-LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+// LRESULT CALLBACK NewWindowProc(HWND hwnd, uint32_t uMsg, uint32_t* wParam, int64_t lParam);
+
+LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam);
 
 u0 Edit_Settings_Json();
 
@@ -75,5 +80,7 @@ u0 Window_On_Top(void *state_ptr);
 const char *pixel_format_to_str_s(PixelFormat format, char *buffer, i32 n);
 
 u0 Open_Sibling(f32 *direction);
+
+u0 Toggle_Properties();
 
 #endif //IMVW_INTERFACE_H

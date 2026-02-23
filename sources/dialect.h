@@ -2,9 +2,10 @@
 // Created by tobin on 12/15/24.
 //
 
-#include "raylib.h"
 #include <ctype.h>
 #include <stdint.h>
+#include <raylib.h>
+//#include "raylib_win_compat.h"
 
 #ifndef TOBIN_DIALECT
 #define TOBIN_DIALECT
@@ -29,7 +30,7 @@
 #if __STDC_VERSION__ >= 201112L
 _Static_assert(sizeof(f32) == 4);
 _Static_assert(sizeof(f64) == 8);
-_Static_assert(sizeof(f128) == 16);
+// _Static_assert(sizeof(f128) == 16);
 #endif
 
 /* Epsilon macros */
@@ -69,7 +70,7 @@ _Static_assert(sizeof(f128) == 16);
 #define v3f Vector3
 #endif
 
-#define NO_OP ({ 0; })
+#define NO_OP ({  })
 
 static u0 stolow(char *str) {
     for (i32 i = 0; str[i]; i++) {
@@ -82,5 +83,24 @@ static u0 stoup(char *str) {
         str[i] = toupper(str[i]);
     }
 }
+
+#ifndef MIN
+#define MIN(a, b) ({ \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a < _b ? _a : _b; \
+})
+#endif
+
+#ifndef MAX
+#define MAX(a, b) ({ \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a > _b ? _a : _b; \
+})
+#endif
+
+#define true 1
+#define false 0
 
 #endif //TOBIN_DIALECT

@@ -6,6 +6,8 @@
 
 #include <dirent.h>
 #include <external/stb_image.h>
+#include <external/tinyfiledialogs.h>
+
 #include "slfile.h"
 
 
@@ -58,7 +60,7 @@ u8 IsDockedToMonitor(HWND hWnd) {
     RECT rc;
     GetWindowRect(hWnd, &rc);
 
-    return placement.showCmd == SW_SHOWNORMAL
+    return placement.showCmd == 1 /*SW_SHOWNORMAL*/
            && (rc.left != placement.rcNormalPosition.left ||
                rc.top != placement.rcNormalPosition.top ||
                rc.right != placement.rcNormalPosition.right ||
@@ -66,7 +68,7 @@ u8 IsDockedToMonitor(HWND hWnd) {
 }
 
 u0 Camera_FitWindow() {
-    if (!IsWindowMaximized() && !IsDockedToMonitor(GetWindowHandle())) {
+    if (!IsWindowMaximized() && !IsDockedToMonitor((HWND) GetWindowHandle())) {
         v2f size = CalculateWindowSize();
         SetWindowSize((i32) size.x, (i32) size.y);
     }
@@ -148,7 +150,7 @@ u0 Camera_Home_Internal(u8 reset_zoom) {
 
     f32 horizontal_zoom = screen_width / texture_width;
     f32 vertical_zoom = screen_height / texture_height;
-    ctx.target_camera.zoom = min(horizontal_zoom, vertical_zoom);
+    ctx.target_camera.zoom = MIN(horizontal_zoom, vertical_zoom);
 }
 
 u0 Camera_Home_NoResetZoom() {
@@ -161,11 +163,6 @@ u0 Camera_Home_ResetZoom() {
 
 
 u0 Toggle_Trilinear_Filtering() {
-    // if (settings.texture_filter == TEXTURE_FILTER_TRILINEAR) {
-    //     settings.texture_filter = TEXTURE_FILTER_POINT;
-    // } else {
-    //     settings.texture_filter = TEXTURE_FILTER_TRILINEAR;
-    // }
     ctx.tex_need_filter = 1;
     switch (settings.texture_filter) {
         case TEXTURE_FILTER_POINT:
@@ -225,7 +222,7 @@ u0 Copy_To_Clipboard() {
     Image img = LoadImageFromTexture(ctx.current_tex);
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
 
-    if (OpenClipboard(GetWindowHandle())) {
+    if (OpenClipboard((HWND) (HWND) GetWindowHandle())) {
         // EmptyClipboard();
         // SetClipboardData(CF_BITMAP, hbm);
         // CloseClipboard();
@@ -247,23 +244,28 @@ u0 Duplicate_Instance(u0) {
     strcat(path, ctx.current_path);
     strcat(path, "\"");
 
-    STARTUPINFO si = {0};
+    STARTUPINFOA si = {0};
     PROCESS_INFORMATION pi = {0};
-    CreateProcess(
+    CreateProcessA(
         NULL, // path,
         path, // ctx.current_path,
         NULL,
         NULL,
         FALSE,
-        DETACHED_PROCESS,
+        0x8/*DETACHED_PROCESS*/,
         NULL,
         NULL,
         &si,
         &pi);
 }
 
+
+u0 Toggle_Properties() {
+    settings.properties_show = !settings.properties_show;
+}
+
 // out_settings->infinite_tile = 1;
-LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
     const i32 op_on_top = 1, op_undecorate = 2, op_focus = 3, op_properties = 4, op_filtering = 5, op_open = 6,
             op_duplicate = 7;
 
@@ -296,7 +298,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                                settings.texture_filter == TEXTURE_FILTER_TRILINEAR
                                    ? "Enable Point Filtering"
                                    : "Enable Trilinear Filtering");
-                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT_PTR) options_menu, "Options");
+                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (u64) options_menu, "Options");
                 }
 
                 /*Window menu popout*/ {
@@ -322,7 +324,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 
 
                     // Add the popout menu
-                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT_PTR) window_menu, "Window");
+                    AppendMenu(hMenu, MF_STRING | MF_POPUP, (u64) window_menu, "Window");
                 }
 
                 // Show the context menu
@@ -346,7 +348,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                     SetMousePosition(p.x, p.y);
                 } else {
                     // TPM_RETURNCMD doesnt send the message, so we have to
-                    SendMessage(GetWindowHandle(), WM_COMMAND, result, 0);
+                    SendMessage((HWND) GetWindowHandle(), WM_COMMAND, result, 0);
                 }
                 // Nothing selected
                 DestroyMenu(hMenu);
@@ -354,7 +356,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case WM_COMMAND: {
-            WORD word = LOWORD(wParam);
+            uint16_t word = (uint16_t)(wParam);
             // Switch statements require literals
             if (word == op_on_top) {
                 // Keep on Top
@@ -375,15 +377,15 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
                 Duplicate_Instance();
                 // Open_File_Dialog();
             } else if (word == SC_MOVE) {
-                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
+                SendMessage((HWND) GetWindowHandle(), WM_SYSCOMMAND, SC_MOVE, 0);
             } else if (word == SC_MINIMIZE) {
-                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
+                SendMessage((HWND) GetWindowHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
             } else if (word == SC_RESTORE) {
-                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
+                SendMessage((HWND) GetWindowHandle(), WM_SYSCOMMAND, SC_RESTORE, 0);
             } else if (word == SC_MAXIMIZE) {
-                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+                SendMessage((HWND) GetWindowHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
             } else if (word == SC_CLOSE) {
-                SendMessage(GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
+                SendMessage((HWND) GetWindowHandle(), WM_SYSCOMMAND, SC_CLOSE, 0);
             } else {
                 printf("/////////");
             }
@@ -392,7 +394,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
     }
     // Call the original window procedure for default processing
     // return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    return CallWindowProc(ctx.default_wind_proc, hwnd, uMsg, wParam, lParam);
+    return CallWindowProc((WNDPROC) ctx.default_wind_proc, hwnd, uMsg, wParam, lParam);
 }
 
 //TODO add a shit load of logging features

@@ -8,7 +8,7 @@
 #include "dialect.h"
 
 #define LOG_TEX "TEX: "
-#define ERR_TEX(errname) fprintf(stderr, "TEX|ERR: \n\tat: %s:%d \n\t`%s`\n", __FILE__, __LINE__, errname);
+#define ERR_TEX(errname) fprintf(stderr, "ERR|TEX: \n\tat: %s:%d \n\t`%s`\n", __FILE__, __LINE__, errname);
 
 extern context_t ctx;
 extern settings_t settings;
@@ -66,7 +66,7 @@ u0 imvw_tex_load() {
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     // Allocate context for the loading thread
-    struct tex_load_ctx_t *load_ctx = malloc(sizeof(struct tex_load_ctx_t));
+    tex_load_ctx_t *load_ctx = (tex_load_ctx_t*) malloc(sizeof(struct tex_load_ctx_t));
 
     // Populate the context
     load_ctx->path = ctx.current_path;

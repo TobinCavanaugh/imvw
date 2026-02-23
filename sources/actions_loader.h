@@ -54,7 +54,7 @@ typedef struct {
 } key_action_t;
 
 u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key_action_t act) {
-    *out_ptr_actions_array = realloc(*out_ptr_actions_array, (*out_actions_count + 1) * sizeof(key_action_t));
+    *out_ptr_actions_array = (key_action_t *) realloc(*out_ptr_actions_array, (*out_actions_count + 1) * sizeof(key_action_t));
     if (*out_ptr_actions_array == NULL) {
         exit(123);
     }
@@ -119,7 +119,7 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
             }
             if (button != NULL) {
                 if (cJSON_IsNumber(button)) {
-                    key_action.button = (i32) cJSON_GetNumberValue(button);
+                    key_action.button = (MouseButton) (i32) cJSON_GetNumberValue(button);
                     key_action.priv_use_mouse = 1;
                 }
                 if (cJSON_IsString(button)) {
@@ -138,7 +138,7 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                     key_action.arg_bool = (u64) cJSON_IsTrue(arg);
                 } else if (cJSON_IsString(arg)) {
                     key_action.arg_type = ARG_TYPE_STR;
-                    key_action.arg_str = strdup(cJSON_GetStringValue(arg));
+                    key_action.arg_str = (unsigned char *) strdup(cJSON_GetStringValue(arg));
                 } else {
                     key_action.arg_type = ARG_TYPE_OBJECT;
                     key_action.arg_obj = cJSON_Duplicate(arg, 1);

@@ -4,7 +4,7 @@
 
 #ifndef KEYBOARD_KEY_H
 #define KEYBOARD_KEY_H
-#include "raylib.h"
+// #include "raylib.h"
 
 typedef struct {
     char name[32];
@@ -156,7 +156,7 @@ KeyboardKey GetKeyFromName(char *name) {
 
     for (i = 0; i < ARRAY_LEN(keyboard_keys); i++) {
         if (strcmp(name, keyboard_keys[i].name) == 0) {
-            return keyboard_keys[i].key;
+            return (KeyboardKey) keyboard_keys[i].key;
         }
     }
 
@@ -177,11 +177,11 @@ MouseButton GetButtonFromName(char *name) {
 
     for (i = 0; i < ARRAY_LEN(mouse_buttons); i++) {
         if (strcmp(name, mouse_buttons[i].name) == 0) {
-            return mouse_buttons[i].key;
+            return (MouseButton) mouse_buttons[i].key;
         }
     }
 
-    return -1;
+    return (MouseButton) -1;
 }
 
 #endif //KEYBOARD_KEY_H

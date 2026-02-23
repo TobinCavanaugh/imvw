@@ -1,49 +1,66 @@
-cmake_minimum_required(VERSION 3.0)
-project(imvw C)
-#set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_STANDARD 11)
+cmake_minimum_required(VERSION 3.12)
+
+# 1. Change project language to CXX (C++)
+# We also keep C enabled just in case you want to leave some legacy files as .c
+project(imvw C CXX)
+
+# 2. Set C++ Standard (17 or 20 is recommended for modern features)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # Adding Raylib
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE) # don't build the supplied examples
-set(BUILD_GAMES OFF CACHE BOOL "" FORCE) # don't build the supplied example games
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
 
-#set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_BUILD_TYPE Debug)
 
-set(CMAKE_C_FLAGS "-Wall -Wextra")
-set(CMAKE_C_FLAGS_DEBUG "-g")
-set(CMAKE_C_FLAGS_RELEASE "-O3")
+# 3. Update Flags to use CMAKE_CXX_FLAGS
+set(CMAKE_CXX_FLAGS "-Wall -Wextra")
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
 FetchContent_Declare(
         raylib
         GIT_REPOSITORY "https://github.com/raysan5/raylib.git"
-        GIT_TAG "master"
+        GIT_TAG "5.0" # 1. Pin to a specific release (e.g., 5.0) instead of a branch
+        GIT_SHALLOW TRUE # 2. Only download the specific commit, not the whole Git history
         GIT_PROGRESS TRUE
+        UPDATE_DISCONNECTED TRUE # 3. Skip network updates if the folder already exists
 )
-find_package(PythonLibs REQUIRED)
-include_directories(${PYTHON_INCLUDE_DIRS})
+
+find_package(Python REQUIRED COMPONENTS Development)
+
+
+include_directories(${Python_INCLUDE_DIRS})
 FetchContent_MakeAvailable(raylib)
 
-# Adding our source files
-file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/sources/*.c") # Define PROJECT_SOURCES as a list of all source files
-set(PROJECT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/sources/") # Define PROJECT_INCLUDE to be the path to the include directory of the project
-# Declaring our executable
-add_executable(${PROJECT_NAME}
-        sources/imvw_interface.c
-        sources/imvw_interface.h
-        sources/context_t.h
-        sources/imvw_init.c
-        sources/imvw_init.h
+# 4. Update GLOB to look for .cpp files (and .c if you are transitioning slowly)
+file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_LIST_DIR}/sources/*.c"
+        "${CMAKE_CURRENT_LIST_DIR}/sources/*.cpp"
 )
+
+set(PROJECT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/sources/")
+
+add_executable(${PROJECT_NAME}
+        sources/main.cpp
+        sources/imvw_interface.cpp
+        sources/imvw_time.cpp
+        sources/imvw_init.cpp
+        sources/win_include.h
+        # Note: You might want to keep system compat files as C
+)
+
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_INCLUDE})
 
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib PRIVATE ${PYTHON_LIBRARIES})
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE shlwapi)
-endif()
+target_include_directories(${PROJECT_NAME} PRIVATE
+        ${PROJECT_INCLUDE}
+        ${raylib_SOURCE_DIR}/src/external/glfw/include
+)
 
-# Setting ASSETS_PATH
-target_compile_definitions(${PROJECT_NAME} PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/") # Set the asset path macro to the absolute path on the dev machine
-#target_compile_definitions(${PROJECT_NAME} PUBLIC ASSETS_PATH="./assets") # Set the asset path macro in release mode to a relative path that assumes the assets folder is in the same directory as the game executable
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib PRIVATE Python::Python PRIVATE shlwapi)
+
+target_compile_definitions(${PROJECT_NAME}
+        PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/")

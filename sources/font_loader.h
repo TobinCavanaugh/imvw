@@ -7,7 +7,7 @@
 
 #include "dialect.h"
 
-#define LOG_FONT "FONT: "
+#define LOG_FONT "LOG|FONT: "
 
 extern context_t ctx;
 extern settings_t settings;

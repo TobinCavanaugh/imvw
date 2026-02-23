@@ -82,9 +82,8 @@
       "press": "O"
     },
     {
-      "func": "printf",
-      "arg": "yup\n",
-      "hold": "P"
+      "func": "Toggle_Properties",
+      "press": "P"
     },
     {
       "func": "Edit_Settings_Json",

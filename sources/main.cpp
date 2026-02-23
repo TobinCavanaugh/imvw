@@ -1,19 +1,41 @@
 // #define PLATFORM_DESKTOP_SDL 1
 
-#include "raylib.h"
+// #include "raylib.h"
 // #define Rectangle RECTANGLE
 // #define CloseWindow RLCloseWindow
-// #define CloseWindow() ({ rlglClose(); SendMessage(GetWindowHandle(), WM_CLOSE, 0, 0 ); })
-#define ShowCursor  RLShowCursor
-#define LoadImage   RLLoadImage
-#define PlaySound   RLPlaySound
-#define DrawText    RLDrawText
-#define DrawTextEx  RLDrawTextEx
+// #define CloseWindow() ({ rlglClose(); SendMessage((HWND) GetWindowHandle(), WM_CLOSE, 0, 0 ); })
+// #define ShowCursor  RLShowCursor
+// #define LoadImage   RLLoadImage
+// #define PlaySound   RLPlaySound
+// #define DrawText    RLDrawText
+// #define DrawTextEx  RLDrawTextEx
 
+//// --- Windows / Raylib compatibility block ---
+//#define CloseWindow Win32_CloseWindow
+//#define Rectangle Win32_Rectangle
+//#define ShowCursor Win32_ShowCursor
+//
+//#include <windows.h>
+//#include <shellapi.h> // For ShellExecute
+//#include <shlwapi.h>  // For StrFormatByteSize64
+//#include <shlobj.h>   // For SHGetFolderPathA
+//
+//// Undefine Windows macros that conflict with Raylib
+//#undef CloseWindow
+//#undef Rectangle
+//#undef ShowCursor
+//#undef LoadImage
+//#undef DrawText
+//#undef DrawTextEx
+//#undef PlaySound
+//// --------------------------------------------
 
+#include "win_include.h"
+
+#include <GLFW/glfw3.h>
 #include <Python.h>
 
-#include "cJSON.h"
+#include "external/cJSON.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +48,7 @@
 
 #include "dialect.h"
 #include "flut.h"
-#include "tinyfiledialogs.h"
+#include "external/tinyfiledialogs.h"
 #include "settings.h"
 #include "actions_loader.h"
 #include "settings_loader.h"
@@ -35,6 +57,7 @@
 #include "imvw_interface.h"
 #include "font_loader.h"
 #include "tex_loader.h"
+#include "imvw_time.h"
 
 #define nameof(a) #a
 
@@ -51,6 +74,7 @@
 #define SHIFT_DOWN ( (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) )
 #define SHIFT_FINE ( SHIFT_DOWN ? 0.5f : 1.0f )
 
+//namespace IMVW {
 /// Key actions
 key_action_t *actions_array = NULL;
 i32 actions_count = 0;
@@ -64,66 +88,31 @@ i32 python_scripts_count;
 settings_t settings = {0};
 
 context_t ctx = {
-    .current_tex = {0},
-    .tex_loading = 0,
-    .tex_need_load = 0,
-    .real_camera = (Camera2D){.target = (v2f){0, 0}, .offset = (v2f){0, 0}, .zoom = 1.0f, .rotation = 0.0f},
-    .current_path = "",
-    .current_window_title = ""
+        .current_tex = {0},
+        .tex_loading = 0,
+        .tex_need_load = 0,
+        .real_camera = (Camera2D) {
+                .offset = (v2f) {0, 0},
+                .target = (v2f) {0, 0},
+                .rotation = 0.0f,
+                .zoom = 1.0f
+        },
+        .current_path = "",
+        .current_window_title = ""
 };
 
-#include <windows.h>
-
-f128 getTimeHD_ms() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000);
-}
-
-u0 sleep_ms(i32 milliseconds) {
-    // Busy waiting for longer than 100ms doesn't make much sense
-    if (milliseconds < 1) {
-    SPIN:
-        f128 start = getTimeHD_ms();
-        while (1) {
-            if (getTimeHD_ms() - start >= milliseconds) {
-                return;
-            }
-        }
-    } else {
-        // Create a waitable timer
-        HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
-
-        // If creating the timer fails, just default to spinning
-        if (timer == NULL) {
-            goto SPIN;
-            return;
-        }
-
-        // Set timer to negative value for relative time
-        LARGE_INTEGER li;
-        li.QuadPart = -1 * (10000LL * milliseconds); // Convert to 100-nanosecond intervals
-
-        // Set the timer
-        if (SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)) {
-            // Wait for the timer to expire
-            WaitForSingleObject(timer, INFINITE);
-        }
-
-        // Close the timer handle
-        CloseHandle(timer);
-    }
-}
 
 context_t prev_ctx;
 
-u0 thread_playerinput() {
+
+void* thread_playerinput(void*arg) {
     prev_ctx = ctx;
     ctx.one = 1;
     while (1) {
         f128 frame_start = getTimeHD_ms();
         /*Run through all of the key actions*/
-    KEY_ACTIONS: {
+        KEY_ACTIONS:
+        {
             i32 i = 0;
             for (; i < actions_count; i++) {
                 key_action_t a = actions_array[i];
@@ -177,15 +166,17 @@ u0 thread_playerinput() {
         f128 total_elapsed = getTimeHD_ms() - frame_start;
         ctx.frame_time = F128(total_elapsed) / 1000.;
     }
+
+    return NULL;
 }
 
 f32 get_system_font_size() {
-    NONCLIENTMETRICS metrics = {0};
-    metrics.cbSize = sizeof(NONCLIENTMETRICS);
+    NONCLIENTMETRICSA metrics = {0};
+    metrics.cbSize = sizeof(NONCLIENTMETRICSA);
 
     // This is guesstimation, but decent
     f32 fontsize = 6;
-    if (SystemParametersInfo(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0)) {
+    if (SystemParametersInfoA(0x0029/*SPI_GETNONCLIENTMETRICS*/, metrics.cbSize, &metrics, 0)) {
         fontsize += -F32(metrics.lfMessageFont.lfHeight);
     }
 
@@ -222,7 +213,7 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
     EndBlendMode();
 
     // Draw the actual text
-    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),V2f(0, 0), 0, font_size, 0, WHITE);
+    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line), V2f(0, 0), 0, font_size, 0, WHITE);
 
     return font_size;
 }
@@ -245,9 +236,11 @@ u0 load_all() {
     fseek(file, 0, SEEK_SET);
 
     // Alloc all of this on the heap. Potential for issues here
-    char *json_text = malloc(size + 1);
+    char *json_text = (char *) malloc(size + 1);
     if (json_text == NULL) {
-        fprintf(stderr, "Failed to allocate memory buffer of size `%llu` bytes. Your `imvw.json` file is too large!\n",
+        fprintf(
+                stderr,
+                "Failed to allocate memory buffer of size `%llu` bytes. Your `imvw.json` file is too large!\n",
                 size + 1);
         exit(1);
     }
@@ -282,7 +275,7 @@ u0 load_all() {
 int main(char argc, char **argv) {
     // Have no console window
     HWND v = GetConsoleWindow();
-    ShowWindow(v, SW_HIDE);
+    ShowWindow(v, 0 /*SW_HIDE*/);
 
     i64 start_time = timeGetTime();
 
@@ -314,14 +307,16 @@ int main(char argc, char **argv) {
     flut_add(Open_File_Dialog);
     flut_add(Open_Sibling);
     flut_add(printf);
+    flut_add(Toggle_Properties);
 
     ctx.target_camera = ctx.real_camera;
 
     // Add our new window proc
-    ctx.default_wind_proc = GetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC);
-    SetWindowLongPtr(GetWindowHandle(), GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
+    //TODO pot err
+    ctx.default_wind_proc = GetWindowLongPtr((HWND) (HWND) GetWindowHandle(), -4/*GWLP_WNDPROC*/);
+    SetWindowLongPtrA((HWND) (HWND) GetWindowHandle(), -4/*GWLP_WNDPROC*/, (i64) NewWindowProc);
 
-    Texture2D bg = LoadTexture(ASSETS_PATH"construction.png");
+    Texture2D bg = LoadTexture(ASSETS_PATH "construction.png");
 
     // Load default file
     if (argc > 1) {
@@ -335,7 +330,8 @@ int main(char argc, char **argv) {
 
         Load(argv_path);
     } else {
-        Load(ASSETS_PATH"test2.png");
+        Load(ASSETS_PATH
+             "test2.png");
     }
 
     Camera_Home_ResetZoom();
@@ -345,9 +341,13 @@ int main(char argc, char **argv) {
     }
 
     pthread_t pt;
-    pthread_create(&pt, NULL, thread_playerinput, NULL);
+    pthread_create(&pt, NULL, (thread_playerinput), NULL);
 
-    printf("LOG: startup_time_ms:%lld\n", timeGetTime() - start_time);
+    printf("IMVW|LOG: startup_time_ms:%lld\n", timeGetTime() - start_time);
+
+    HRESULT result;
+    f32 nearest;
+    f32 dt;
 
     // We do a pre-render step so the window never flashes white
     goto RENDER;
@@ -383,8 +383,8 @@ int main(char argc, char **argv) {
             } else {
                 settings.undecorated = !settings.undecorated;
                 settings.undecorated
-                    ? SetWindowState(FLAG_WINDOW_UNDECORATED)
-                    : ClearWindowState(FLAG_WINDOW_UNDECORATED);
+                ? SetWindowState(FLAG_WINDOW_UNDECORATED)
+                : ClearWindowState(FLAG_WINDOW_UNDECORATED);
             }
         }
 
@@ -393,13 +393,31 @@ int main(char argc, char **argv) {
             settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
         }
         if (IsWindowState(FLAG_WINDOW_UNDECORATED) != settings.undecorated) {
-            settings.undecorated ? SetWindowState(FLAG_WINDOW_UNDECORATED) : ClearWindowState(FLAG_WINDOW_UNDECORATED);
+            settings.undecorated
+            ? SetWindowState(FLAG_WINDOW_UNDECORATED)
+            : ClearWindowState(FLAG_WINDOW_UNDECORATED);
         }
 
         // Right click thing
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-            SendMessage(GetWindowHandle(), WM_CONTEXTMENU, GetWindowHandle(), 0);
+            SendMessage((HWND) (HWND) GetWindowHandle(), 0x007B /*WM_CONTEXTMENU*/,
+                        (WPARAM) (HWND) GetWindowHandle(), 0);
             goto RENDER;
+        }
+
+        char appDataPath[MAX_PATH];
+        result = SHGetFolderPathA(NULL, 0x001a/*Appdata*/ , NULL, 0, appDataPath);
+        if (SUCCEEDED(result)) {
+            strcat(appDataPath, "\\imvw\\");
+            CreateDirectoryA(appDataPath, NULL);
+            strcat(appDataPath, "cache.png");
+
+            if (!FileExists(appDataPath) && ctx.current_tex.id) {
+                Image img = LoadImageFromTexture(ctx.current_tex);
+                ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+                ImageResize(&img, max(img.width / 2, 512), max(img.width / 2, 512));
+                ExportImage(img, appDataPath);
+            }
         }
 
         // Pan window TODO FIX
@@ -423,16 +441,17 @@ int main(char argc, char **argv) {
             // Zooming feels slow at small values
             // TODO this sucks
             ctx.target_camera.zoom += GetMouseWheelMove() * GetFrameTime() * SHIFT_FINE *
-                    settings.zoom_speed *
-                    (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
-                    (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
-                    (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
-                    (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
-                    (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
-                    (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
-                    (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
+                                      settings.zoom_speed *
+                                      (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
+                                      (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
+                                      (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
+                                      (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
+                                      (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
+                                      (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
+                                      (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
 
-            f32 max_zoom_in = 100.0f / (max(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
+            f32 max_zoom_in =
+                    100.0f / (max(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
             // f32 min_zoom_out = max(GetScreenHeight(), GetScreenWidth()) ;
             // f32 min_zoom_out = max(ctx.current_texture.width, ctx.current_texture.height);
             f32 min_zoom_out = 128;
@@ -442,28 +461,30 @@ int main(char argc, char **argv) {
 
 
         // If we are very close to a 360 degree interval, set it to 0
-        f32 nearest = roundf(ctx.real_camera.rotation / 360.f) * 360.f;
+        nearest = roundf(ctx.real_camera.rotation / 360.f) * 360.f;
         if (fabs(ctx.real_camera.rotation - nearest) < EPSILON) {
             ctx.real_camera.rotation = 0;
         }
 
         /// Lerp camera fields TODO: Move this to other thread maybe
-        f32 dt = GetFrameTime();
+        dt = GetFrameTime();
         ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset,
                                              dt * settings.lerpSpeed_pan);
         ctx.real_camera.target = Vector2Lerp(ctx.real_camera.target, ctx.target_camera.target,
                                              dt * settings.lerpSpeed_pan);
         ctx.real_camera.rotation = Lerp(ctx.real_camera.rotation, ctx.target_camera.rotation,
                                         dt * settings.lerpSpeed_rotate);
-        ctx.real_camera.zoom = max(Lerp(ctx.real_camera.zoom, ctx.target_camera.zoom, dt * settings.lerpSpeed_zoom), 0);
+        ctx.real_camera.zoom = max(Lerp(ctx.real_camera.zoom, ctx.target_camera.zoom, dt * settings.lerpSpeed_zoom),
+                                   0);
 
         roundCamera2DValues(&ctx.real_camera, 0.001f);
         roundCamera2DValues(&ctx.target_camera, 0.001f);
 
         /// Rendering
-    RENDER:
+        RENDER:
         BeginDrawing();
-        BeginMode2D(ctx.real_camera); {
+        BeginMode2D(ctx.real_camera);
+        {
             // Load image if needed
             if (ctx.tex_need_load && !ctx.tex_loading) {
                 // Unload texture time is near 0ms
@@ -521,7 +542,7 @@ int main(char argc, char **argv) {
                 } else {
                     // Get the visible area in world coordinates
                     v2f ul = GetScreenToWorld2D(V2f(0, 0), ctx.real_camera);
-                    v2f br = GetScreenToWorld2D(V2f(GetScreenWidth(), GetScreenHeight()), ctx.real_camera);
+                    v2f br = GetScreenToWorld2D(V2f((f32) GetScreenWidth(), (f32) GetScreenHeight()), ctx.real_camera);
 
                     // Calculate the starting position (floor to get complete tiles)
                     i32 start_x = (i32) floor(ul.x / ctx.current_tex.width) * ctx.current_tex.width
@@ -568,14 +589,16 @@ int main(char argc, char **argv) {
             pl += draw_properties(pl, "Channels: %d", ctx.tex_channels);
 
             // Display pixelformat
-            pixel_format_to_str_s(ctx.current_tex.format, buf, sizeof(buf));
+            pixel_format_to_str_s((PixelFormat) ctx.current_tex.format, buf, sizeof(buf));
             pl += draw_properties(pl, "Format: %s", buf);
 
             // Uggo
             pl += draw_properties(pl, "Filter: %s",
                                   settings.texture_filter == TEXTURE_FILTER_BILINEAR
-                                      ? "Bilinear"
-                                      : (settings.texture_filter == TEXTURE_FILTER_TRILINEAR ? "Trilinear" : "Point"));
+                                  ? "Bilinear"
+                                  : (settings.texture_filter == TEXTURE_FILTER_TRILINEAR
+                                     ? "Trilinear"
+                                     : "Point"));
 
             pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
             pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
@@ -583,8 +606,7 @@ int main(char argc, char **argv) {
 
         EndDrawing();
 
-    END_OF_FRAME:
-
+        END_OF_FRAME:
 
 
     }
@@ -593,3 +615,4 @@ int main(char argc, char **argv) {
 
     return 0;
 }
+//}

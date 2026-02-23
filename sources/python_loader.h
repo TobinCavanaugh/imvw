@@ -7,6 +7,7 @@
 #ifndef PYTHON_LOADER_H
 #define PYTHON_LOADER_H
 
+#define ERR_PY(errname, ...) fprintf(stderr, "ERR|PY: " errname"\n\t@ %s:%d\n", __VA_ARGS__, __FILE__, __LINE__);
 
 PyObject *test_func(PyObject *self, PyObject *args) {
     printf("Ran from python\n");
@@ -14,16 +15,16 @@ PyObject *test_func(PyObject *self, PyObject *args) {
 }
 
 static PyMethodDef ExposedFunctions[] = {
-    {"testfunc", test_func, METH_VARARGS, ""},
-    {NULL, NULL, 0, NULL}
+        {"testfunc", test_func, METH_VARARGS, ""},
+        {NULL, NULL, 0, NULL}
 };
 
 static PyModuleDef main_module = {
-    PyModuleDef_HEAD_INIT,
-    "imvw",
-    NULL,
-    -1,
-    ExposedFunctions
+        PyModuleDef_HEAD_INIT,
+        "imvw",
+        NULL,
+        -1,
+        ExposedFunctions
 };
 
 PyMODINIT_FUNC PyInit_main_module(void) {
@@ -39,7 +40,13 @@ u0 scripts_add(char *name) {
         return;
     }
 
-    scripts_array = realloc(scripts_array, (scripts_count + 1) * sizeof(PyObject *));
+    // Test if file exists
+    if (!FileExists(name)) {
+        ERR_PY("Failed to load script `%s` due to file not existing", name)
+        return;
+    }
+
+    scripts_array = (PyObject **) realloc(scripts_array, (scripts_count + 1) * sizeof(PyObject *));
 
     PyObject *pyname = PyUnicode_FromString(name); //segfault here...
     PyObject *mod = PyImport_Import(pyname);
@@ -78,13 +85,13 @@ u0 load_python(cJSON *json, char ***out_scripts, i32 *out_count) {
     cJSON *scripts = cJSON_GetObjectItem(json, "scripts");
 
     i32 size = cJSON_GetArraySize(scripts);
-    *out_scripts = realloc(*out_scripts, sizeof(char *) * size);
+    *out_scripts = (char **) realloc(*out_scripts, sizeof(char *) * size);
     *out_count = size;
 
     i32 i = 0;
     for (; i < size; i++) {
         char *script_path = cJSON_GetStringValue(cJSON_GetArrayItem(scripts, i));
-        char *res = malloc(strlen(script_path + 1));
+        char *res = (char *) (malloc(strlen(script_path) + 1));
         strcpy(res, script_path);
 
         // Remove the .py extension, because the python script runner doesn't

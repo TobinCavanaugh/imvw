@@ -36,9 +36,9 @@ typedef struct {
 } file_size_str_t;
 
 static slfile_t slfile_new_pro(char *full_path_in, char *result_path_out, char *result_name_out) {
-    slfile_t x = (slfile_t){0};
+    slfile_t x = (slfile_t) {0};
 
-    struct stat s = (struct stat){0};
+    struct stat s = (struct stat) {0};
     stat(full_path_in, &s);
 
     // x.full_path = malloc(strlen(full_path_in) + 1);
@@ -67,8 +67,8 @@ static slfile_t slfile_new_pro(char *full_path_in, char *result_path_out, char *
 }
 
 static slfile_t slfile_new(char *full_path_in) {
-    char *full_path_out = malloc(strlen(full_path_in) + 1);
-    char *name_out = malloc(strlen(basename(full_path_in)) + 1);
+    char *full_path_out = (char *) malloc(strlen(full_path_in) + 1);
+    char *name_out = (char *) malloc(strlen(basename(full_path_in)) + 1);
 
     return slfile_new_pro(full_path_in, full_path_out, name_out);
 }
@@ -225,27 +225,27 @@ static file_size_str_t dir_calculate_file_size_t(u64 size_B, u8 use_metric) {
 
     if (use_metric) {
         if (size < 1000) {
-            return (file_size_str_t){.size_in_units = size, .unit = "B"};
+            return (file_size_str_t) {.size_in_units = size, .unit = "B"};
         } else if (size < (1000 * 1000)) {
-            return (file_size_str_t){.size_in_units = size / 1000.0, .unit = "KB"};
+            return (file_size_str_t) {.size_in_units = size / 1000.0, .unit = "KB"};
         } else if (size < (1000 * 1000 * 1000)) {
-            return (file_size_str_t){.size_in_units = size / 1000.0 / 1000.0, .unit = "MB"};
+            return (file_size_str_t) {.size_in_units = size / 1000.0 / 1000.0, .unit = "MB"};
         } else if (size < (1000 * 1000 * 1000 * 1000)) {
-            return (file_size_str_t){.size_in_units = size / 1000.0 / 1000.0 / 1000.0, .unit = "GB"};
+            return (file_size_str_t) {.size_in_units = size / 1000.0 / 1000.0 / 1000.0, .unit = "GB"};
         } else {
-            return (file_size_str_t){.size_in_units = size / 1000.0 / 1000.0 / 1000.0, .unit = "TB"};
+            return (file_size_str_t) {.size_in_units = size / 1000.0 / 1000.0 / 1000.0, .unit = "TB"};
         }
     } else {
         if (size < 1024) {
-            return (file_size_str_t){.size_in_units = size, .unit = "B"};
+            return (file_size_str_t) {.size_in_units = size, .unit = "B"};
         } else if (size < (1024 * 1024)) {
-            return (file_size_str_t){.size_in_units = size / 1024.0, .unit = "KiB"};
+            return (file_size_str_t) {.size_in_units = size / 1024.0, .unit = "KiB"};
         } else if (size < (1024 * 1024 * 1024)) {
-            return (file_size_str_t){.size_in_units = size / 1024.0 / 1024.0, .unit = "MiB"};
+            return (file_size_str_t) {.size_in_units = size / 1024.0 / 1024.0, .unit = "MiB"};
         } else if (size < (1024 * 1024 * 1024 * 1024)) {
-            return (file_size_str_t){.size_in_units = size / 1024.0 / 1024.0 / 1024.0, .unit = "GiB"};
+            return (file_size_str_t) {.size_in_units = size / 1024.0 / 1024.0 / 1024.0, .unit = "GiB"};
         } else {
-            return (file_size_str_t){.size_in_units = size / 1024.0 / 1024.0 / 1024.0 / 2024.0, .unit = "GiB"};
+            return (file_size_str_t) {.size_in_units = size / 1024.0 / 1024.0 / 1024.0 / 2024.0, .unit = "GiB"};
         }
     }
 }

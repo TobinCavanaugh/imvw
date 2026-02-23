@@ -5,8 +5,8 @@
 #ifndef CONTEXT_T_H
 #define CONTEXT_T_H
 
-#include <raylib.h>
-#include <dialect.h>
+ #include <raylib.h>
+#include "dialect.h"
 #include <pthread.h>
 #include "GLFW/glfw3.h"
 
@@ -14,11 +14,13 @@
 #include <stdatomic.h>
 
 #include <math.h>
-#ifdef _WIN64
-typedef __int64 LONG_PTR;
-#else
-    typedef long LONG_PTR;
-#endif
+#include <string.h>
+
+// #ifdef _WIN64
+// typedef __int64 LONG_PTR;
+// #else
+//     typedef long LONG_PTR;
+// #endif
 
 typedef struct {
     i32 one;
@@ -42,7 +44,7 @@ typedef struct {
 
     Font current_font;
 
-    LONG_PTR default_wind_proc;
+    i64 default_wind_proc;
     GLFWwindow *main_window;
 
     char current_path[PATH_MAX];
