@@ -37,6 +37,7 @@ typedef struct {
     TextureFilter texture_filter;
 
     Color bg_color;
+    Color bg_color_alt;
 } settings_t;
 
 #endif //SETTINGS_H

@@ -19,6 +19,12 @@
       "g": 0,
       "b": 0,
       "a": 128
+    },
+    "bg_color_alt": {
+      "r": 0,
+      "g": 0,
+      "b": 0,
+      "a": 255
     }
   },
   "scripts": [
@@ -29,6 +35,11 @@
       "func": "exit",
       "press": "W",
       "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "Toggle_BG_Color",
+      "press": "t",
+      "modifier": ""
     },
     {
       "func": "exit",

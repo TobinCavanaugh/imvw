@@ -5,10 +5,7 @@
 // #include "imvw_time.h"
 
 #include "imvw_time.h"
-#include <pthread_time.h>
-// #include <windows.h>
-// #include <shlobj.h>
-//#include "raylib_win_compat.h"
+#include "win_include.h"
 #include "dialect.h"
 #include "imvw_interface.h"
 

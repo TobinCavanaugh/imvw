@@ -1,5 +1,21 @@
 // #define PLATFORM_DESKTOP_SDL 1
 
+#define SUPPORT_FILEFORMAT_PNG 1
+#define SUPPORT_FILEFORMAT_BMP 1
+#define SUPPORT_FILEFORMAT_TGA 1
+#define SUPPORT_FILEFORMAT_JPG 1
+#define SUPPORT_FILEFORMAT_GIF 1
+#define SUPPORT_FILEFORMAT_PIC 1
+#define SUPPORT_FILEFORMAT_HDR 1
+#define SUPPORT_FILEFORMAT_PNM 1
+#define SUPPORT_FILEFORMAT_PSD 1
+
+#define STB_IMAGE_STATIC
+#define STB_SUPPORT_JPG
+
+//#define STB_IMAGE_IMPLEMENTATION
+#include "external/stb_image.h"
+
 // #include "raylib.h"
 // #define Rectangle RECTANGLE
 // #define CloseWindow RLCloseWindow
@@ -105,7 +121,7 @@ context_t ctx = {
 context_t prev_ctx;
 
 
-void* thread_playerinput(void*arg) {
+void *thread_playerinput(void *arg) {
     prev_ctx = ctx;
     ctx.one = 1;
     while (1) {
@@ -272,10 +288,11 @@ u0 load_all() {
 // TODO: Pixel grid support
 // TODO: Construction lines background or something
 // TODO: Better zooming
-int main(char argc, char **argv) {
+i32 main(i32 argc, char **argv) {
     // Have no console window
     HWND v = GetConsoleWindow();
     ShowWindow(v, 0 /*SW_HIDE*/);
+
 
     i64 start_time = timeGetTime();
 
@@ -308,6 +325,7 @@ int main(char argc, char **argv) {
     flut_add(Open_Sibling);
     flut_add(printf);
     flut_add(Toggle_Properties);
+    flut_add(Toggle_BG_Color);
 
     ctx.target_camera = ctx.real_camera;
 
@@ -315,6 +333,15 @@ int main(char argc, char **argv) {
     //TODO pot err
     ctx.default_wind_proc = GetWindowLongPtr((HWND) (HWND) GetWindowHandle(), -4/*GWLP_WNDPROC*/);
     SetWindowLongPtrA((HWND) (HWND) GetWindowHandle(), -4/*GWLP_WNDPROC*/, (i64) NewWindowProc);
+
+    {
+        HWND hwnd = (HWND) GetWindowHandle();
+        HINSTANCE hInst = GetModuleHandle(NULL);
+        HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(101));
+        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    }
+
 
     Texture2D bg = LoadTexture(ASSETS_PATH "construction.png");
 
@@ -376,6 +403,9 @@ int main(char argc, char **argv) {
             settings.maximized = IsWindowMaximized();
         }
 
+        // TODO MIGRATE TO JSON
+
+        
         // Maximize / hide border
         if (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER))) {
             if (IsWindowMaximized()) {
@@ -485,20 +515,28 @@ int main(char argc, char **argv) {
         BeginDrawing();
         BeginMode2D(ctx.real_camera);
         {
-            // Load image if needed
-            if (ctx.tex_need_load && !ctx.tex_loading) {
-                // Unload texture time is near 0ms
+            // 1. Trigger the background RAM load if needed
+            if (ctx.tex_need_load && !ctx.tex_loading && !ctx.img_ready_to_upload) {
+                imvw_tex_load();
+            }
+
+            // 2. Upload to GPU on the Main Thread (Thread Safe!)
+            if (ctx.img_ready_to_upload) {
                 if (ctx.current_tex.width != 0) {
-                    UnloadTexture(ctx.current_tex);
+                    UnloadTexture(ctx.current_tex); // Free old VRAM
                 }
 
-                // Clear the background, and display it
-                ClearBackground(settings.bg_color);
-                EndDrawing();
-                BeginDrawing();
+                // Push RAM to VRAM
+                ctx.current_tex = LoadTextureFromImage(ctx.loading_img);
 
-                // Load the image here
-                imvw_tex_load();
+                GenTextureMipmaps(&ctx.current_tex);
+                SetTextureFilter(ctx.current_tex, settings.texture_filter);
+
+                UnloadImage(ctx.loading_img); // Free RAM ... ?
+
+                ctx.img_ready_to_upload = 0;
+                ctx.tex_need_load = 0;
+                ctx.tex_need_filter = 0;
 
                 Camera_FitWindow();
                 Camera_Home_Internal(true);
@@ -510,8 +548,7 @@ int main(char argc, char **argv) {
                 ctx.tex_need_filter = 0;
             }
 
-            ClearBackground(settings.bg_color);
-
+            ClearBackground(ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color);
 
             // // TODO construction lines
             // // Get the bounds of the visible area in world coordinates

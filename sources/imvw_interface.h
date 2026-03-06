@@ -83,4 +83,6 @@ u0 Open_Sibling(f32 *direction);
 
 u0 Toggle_Properties();
 
+u0 Toggle_BG_Color();
+
 #endif //IMVW_INTERFACE_H

@@ -1,92 +1,53 @@
-//
-// Created by tobin on 2025-03-19.
-//
-
 #ifndef TEX_LOADER_H
 #define TEX_LOADER_H
 
 #include "dialect.h"
+#include "image_decoder.h"
 
-#define LOG_TEX "TEX: "
 #define ERR_TEX(errname) fprintf(stderr, "ERR|TEX: \n\tat: %s:%d \n\t`%s`\n", __FILE__, __LINE__, errname);
 
 extern context_t ctx;
-extern settings_t settings;
 
 typedef struct tex_load_ctx_t {
     char *path;
-    Texture2D *out_tex;
+    Image *out_img;
     _Atomic u8 *out_loading;
-    _Atomic u8 *out_need_load;
-    _Atomic u8 *out_need_filter;
-    GLFWwindow *glfw_window;
+    _Atomic u8 *out_ready;
 } tex_load_ctx_t;
 
-// Internal texture loading function for thread
-u0 *internal_tex_load(void *raw_ptr) {
-    // Cast the raw pointer to our context struct
-    struct tex_load_ctx_t *load_ctx = (struct tex_load_ctx_t *) raw_ptr;
+void *internal_tex_load(void *raw_ptr) {
+    tex_load_ctx_t *load_ctx = (tex_load_ctx_t *) raw_ptr;
 
-    // Set our current context to our loading context
-    glfwMakeContextCurrent(load_ctx->glfw_window);
+    // Load into CPU RAM (100% Thread Safe!)
+    *load_ctx->out_img = imvw_load_image_extended(load_ctx->path);
 
-    // Load the texture
-    *load_ctx->out_tex = LoadTexture(load_ctx->path);
-
-    if(!load_ctx->out_tex->width) {
-        ERR_TEX("Failed to load texture");
+    if(!load_ctx->out_img->width || !load_ctx->out_img->data) {
+        ERR_TEX("Failed to decode image data into RAM");
+        // Create a dummy magenta texture so the program doesn't crash
+        *load_ctx->out_img = GenImageColor(2, 2, MAGENTA);
     }
 
-    // Generate mipmaps
-    GenTextureMipmaps(load_ctx->out_tex);
-
-    // Destroy the loading window
-    glfwDestroyWindow(load_ctx->glfw_window);
-
-    // Set the loaded flag
+    // Signal main thread to upload to GPU
+    *load_ctx->out_ready = 1;
     *load_ctx->out_loading = 0;
-    *load_ctx->out_need_load = 0;
-    *load_ctx->out_need_filter = 1;
 
-    // Free the context
     free(load_ctx);
-
     return NULL;
 }
 
-// Async texture loading function
 u0 imvw_tex_load() {
-    // Check if a texture is already loading
-    if (!ctx.tex_need_load || ctx.tex_loading) {
-        printf("Texture already loading or loaded >:(\n");
-        return;
-    }
+    if (!ctx.tex_need_load || ctx.tex_loading) return;
 
-    // Set window hint for invisible window
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-    // Allocate context for the loading thread
-    tex_load_ctx_t *load_ctx = (tex_load_ctx_t*) malloc(sizeof(struct tex_load_ctx_t));
-
-    // Populate the context
+    tex_load_ctx_t *load_ctx = (tex_load_ctx_t*) malloc(sizeof(tex_load_ctx_t));
     load_ctx->path = ctx.current_path;
-    load_ctx->out_tex = &ctx.current_tex;
+    load_ctx->out_img = &ctx.loading_img;
     load_ctx->out_loading = &ctx.tex_loading;
-    load_ctx->out_need_load = &ctx.tex_need_load;
-    load_ctx->out_need_filter = &ctx.tex_need_filter;
+    load_ctx->out_ready = &ctx.img_ready_to_upload;
 
-    // Create the loading window based on main context
-    load_ctx->glfw_window = glfwCreateWindow(1, 1, "Tex Loader", NULL, ctx.main_window);
-    if(!load_ctx->glfw_window) {
-        ERR_TEX("Failed to create glfw window");
-    }
-
-    // Set the loading flag
     ctx.tex_loading = 1;
 
-    // Create and detach the thread
     pthread_t thr;
-    pthread_create(&thr, NULL, *internal_tex_load, (void *) load_ctx);
+    pthread_create(&thr, NULL, internal_tex_load, (void *) load_ctx);
     pthread_detach(thr);
 }
 

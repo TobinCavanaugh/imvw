@@ -30,10 +30,24 @@ FetchContent_Declare(
         UPDATE_DISCONNECTED TRUE # 3. Skip network updates if the folder already exists
 )
 
+# Find Python
 find_package(Python REQUIRED COMPONENTS Development)
 
+find_package(WebP CONFIG REQUIRED)
+find_package(TIFF REQUIRED)
+
+
+# -------------------------------
 
 include_directories(${Python_INCLUDE_DIRS})
+
+
+set(SUPPORT_FILEFORMAT_JPG ON CACHE BOOL "" FORCE)
+set(SUPPORT_FILEFORMAT_PNG ON CACHE BOOL "" FORCE)
+set(SUPPORT_FILEFORMAT_BMP ON CACHE BOOL "" FORCE)
+set(SUPPORT_FILEFORMAT_TGA ON CACHE BOOL "" FORCE)
+set(SUPPORT_FILEFORMAT_GIF ON CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(raylib)
 
 # 4. Update GLOB to look for .cpp files (and .c if you are transitioning slowly)
@@ -50,17 +64,34 @@ add_executable(${PROJECT_NAME}
         sources/imvw_time.cpp
         sources/imvw_init.cpp
         sources/win_include.h
-        # Note: You might want to keep system compat files as C
+        sources/image_decoder.h
+        resources.rc
 )
 
 target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCES})
 
+# Include directories for Raylib, WebP, and TIFF
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${PROJECT_INCLUDE}
         ${raylib_SOURCE_DIR}/src/external/glfw/include
+        ${TIFF_INCLUDE_DIR}
+        ${WEBP_INCLUDE_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib PRIVATE Python::Python PRIVATE shlwapi)
+# Link the libraries!
+target_link_libraries(${PROJECT_NAME} PRIVATE
+        raylib
+        Python::Python
+        shlwapi
+        TIFF::TIFF
+        ${WEBP_LIBRARY}
+)
+
+
+
+target_link_libraries(${PROJECT_NAME} PRIVATE WebP::webp WebP::webpdecoder WebP::webpdemux)
+target_link_libraries(${PROJECT_NAME} PRIVATE WebP::libwebpmux)
+target_link_libraries(${PROJECT_NAME} PRIVATE WebP::sharpyuv)
 
 target_compile_definitions(${PROJECT_NAME}
         PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/")

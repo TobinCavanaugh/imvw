@@ -26,6 +26,8 @@ typedef struct {
     i32 one;
 
     Texture2D current_tex;
+    Image loading_img;
+    _Atomic u8 img_ready_to_upload;
 
     _Atomic u8 tex_loading;
     _Atomic u8 tex_need_load;
@@ -46,6 +48,8 @@ typedef struct {
 
     i64 default_wind_proc;
     GLFWwindow *main_window;
+
+    bool use_alt_bg;
 
     char current_path[PATH_MAX];
     char current_window_title[PATH_MAX];

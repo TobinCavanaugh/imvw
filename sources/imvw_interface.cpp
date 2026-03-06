@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <external/stb_image.h>
 #include <external/tinyfiledialogs.h>
+//#include "image_decoder.h"
 
 #include "slfile.h"
 
@@ -75,30 +76,39 @@ u0 Camera_FitWindow() {
 }
 
 u0 Load(char *path) {
-    // Set title path
     strcpy(ctx.current_path, path);
     strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
-    // Load the info of the image, assign it to our current texture then fit
-    // the window correctly. This means our window fits the size of our tex
-    // before it's fully loaded :)
-    i32 wid, hei, channels;
-    stbi_info(path, &wid, &hei, &channels);
+    i32 wid = 0, hei = 0, channels = 0;
+
+    // Try to get info natively first
+    if (!stbi_info(path, &wid, &hei, &channels)) {
+        // If native info fails, provide temporary dimensions so the window
+        // doesn't vanish/glitch before the async thread finishes.
+        wid = 1;
+        hei = 1;
+        channels = 3;
+        printf("\nFAILED TO LOAD IMAGE INFO AT %s\n", path);
+    }
+//    if (FileExists(path)) {
+//        ctx.tex_need_load = 1;
+//        ctx.current_tex.width = 1;
+//        ctx.current_tex.height = 1;
+//        ctx.tex_channels = 1;
+//    }
 
     ctx.current_tex.width = wid;
     ctx.current_tex.height = hei;
     ctx.tex_channels = channels;
 
     struct _stat info;
-    if (_stat(ctx.current_path, &info) == 0) {
-        ctx.tex_fsize = info.st_size;
-    } else {
-        ctx.tex_fsize = 0;
-    }
+    ctx.tex_fsize = (_stat(ctx.current_path, &info) == 0) ? info.st_size : 0;
 
+    // Fit window based on initial (possibly placeholder) dimensions
     Camera_FitWindow();
 
+    // Trigger the background thread in tex_loader.h
     ctx.tex_need_load = 1;
 
     SetWindowTitle(ctx.current_window_title);
@@ -117,13 +127,17 @@ u0 Rotate(f32 amount) {
     ctx.target_camera.rotation += amount * ctx.frame_time * 125.0f * settings.rotation_speed * SHIFT_FINE;
 }
 
+u0 Toggle_BG_Color() {
+    ctx.use_alt_bg = !ctx.use_alt_bg;
+}
+
 u0 Rotate_By_Scroll() {
     Rotate(GetMouseWheelMove());
 }
 
 u0 Rotate_By_Mouse() {
     ctx.target_camera.rotation += ctx.mouse_delta.x / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE *
-            (ctx.frame_time * 100.0f * settings.rotation_speed);
+                                  (ctx.frame_time * 100.0f * settings.rotation_speed);
 
     // ctx.target_camera.rotation += ctx.mouse_delta.y / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE *
     //         (ctx.frame_time * 100.0f * settings.rotation_speed);
@@ -196,12 +210,12 @@ u0 Camera_Pan() {
 u0 Open_File_Dialog() {
     char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg"};
     char *out = tinyfd_openFileDialog(
-        "Select a PNG or JPEG file",
-        NULL,
-        3,
-        lFilterPatterns,
-        "Image Files",
-        0);
+            "Select a PNG or JPEG file",
+            NULL,
+            3,
+            lFilterPatterns,
+            "Image Files",
+            0);
 
     printf("[[%s]]", out);
     if (out != NULL && strlen(out) > 0) {
@@ -247,16 +261,16 @@ u0 Duplicate_Instance(u0) {
     STARTUPINFOA si = {0};
     PROCESS_INFORMATION pi = {0};
     CreateProcessA(
-        NULL, // path,
-        path, // ctx.current_path,
-        NULL,
-        NULL,
-        FALSE,
-        0x8/*DETACHED_PROCESS*/,
-        NULL,
-        NULL,
-        &si,
-        &pi);
+            NULL, // path,
+            path, // ctx.current_path,
+            NULL,
+            NULL,
+            FALSE,
+            0x8/*DETACHED_PROCESS*/,
+            NULL,
+            NULL,
+            &si,
+            &pi);
 }
 
 
@@ -296,8 +310,8 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
                 {
                     AppendMenu(options_menu, MF_STRING, op_filtering,
                                settings.texture_filter == TEXTURE_FILTER_TRILINEAR
-                                   ? "Enable Point Filtering"
-                                   : "Enable Trilinear Filtering");
+                               ? "Enable Point Filtering"
+                               : "Enable Trilinear Filtering");
                     AppendMenu(hMenu, MF_STRING | MF_POPUP, (u64) options_menu, "Options");
                 }
 
@@ -356,7 +370,7 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
             return 0;
         }
         case WM_COMMAND: {
-            uint16_t word = (uint16_t)(wParam);
+            uint16_t word = (uint16_t) (wParam);
             // Switch statements require literals
             if (word == op_on_top) {
                 // Keep on Top
@@ -429,55 +443,80 @@ const char *pixel_format_to_str_s(PixelFormat format, char *buffer, i32 n) {
     const char *formatStr = NULL;
 
     switch (format) {
-        case PIXELFORMAT_UNCOMPRESSED_GRAYSCALE: formatStr = "UNCOMPRESSED_GRAYSCALE";
+        case PIXELFORMAT_UNCOMPRESSED_GRAYSCALE:
+            formatStr = "UNCOMPRESSED_GRAYSCALE";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA: formatStr = "UNCOMPRESSED_GRAY_ALPHA";
+        case PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA:
+            formatStr = "UNCOMPRESSED_GRAY_ALPHA";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R5G6B5: formatStr = "UNCOMPRESSED_R5G6B5";
+        case PIXELFORMAT_UNCOMPRESSED_R5G6B5:
+            formatStr = "UNCOMPRESSED_R5G6B5";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R8G8B8: formatStr = "UNCOMPRESSED_R8G8B8";
+        case PIXELFORMAT_UNCOMPRESSED_R8G8B8:
+            formatStr = "UNCOMPRESSED_R8G8B8";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R5G5B5A1: formatStr = "UNCOMPRESSED_R5G5B5A1";
+        case PIXELFORMAT_UNCOMPRESSED_R5G5B5A1:
+            formatStr = "UNCOMPRESSED_R5G5B5A1";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R4G4B4A4: formatStr = "UNCOMPRESSED_R4G4B4A4";
+        case PIXELFORMAT_UNCOMPRESSED_R4G4B4A4:
+            formatStr = "UNCOMPRESSED_R4G4B4A4";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R8G8B8A8: formatStr = "UNCOMPRESSED_R8G8B8A8";
+        case PIXELFORMAT_UNCOMPRESSED_R8G8B8A8:
+            formatStr = "UNCOMPRESSED_R8G8B8A8";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R32: formatStr = "UNCOMPRESSED_R32";
+        case PIXELFORMAT_UNCOMPRESSED_R32:
+            formatStr = "UNCOMPRESSED_R32";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R32G32B32: formatStr = "UNCOMPRESSED_R32G32B32";
+        case PIXELFORMAT_UNCOMPRESSED_R32G32B32:
+            formatStr = "UNCOMPRESSED_R32G32B32";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: formatStr = "UNCOMPRESSED_R32G32B32A32";
+        case PIXELFORMAT_UNCOMPRESSED_R32G32B32A32:
+            formatStr = "UNCOMPRESSED_R32G32B32A32";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R16: formatStr = "UNCOMPRESSED_R16";
+        case PIXELFORMAT_UNCOMPRESSED_R16:
+            formatStr = "UNCOMPRESSED_R16";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R16G16B16: formatStr = "UNCOMPRESSED_R16G16B16";
+        case PIXELFORMAT_UNCOMPRESSED_R16G16B16:
+            formatStr = "UNCOMPRESSED_R16G16B16";
             break;
-        case PIXELFORMAT_UNCOMPRESSED_R16G16B16A16: formatStr = "UNCOMPRESSED_R16G16B16A16";
+        case PIXELFORMAT_UNCOMPRESSED_R16G16B16A16:
+            formatStr = "UNCOMPRESSED_R16G16B16A16";
             break;
-        case PIXELFORMAT_COMPRESSED_DXT1_RGB: formatStr = "COMPRESSED_DXT1_RGB";
+        case PIXELFORMAT_COMPRESSED_DXT1_RGB:
+            formatStr = "COMPRESSED_DXT1_RGB";
             break;
-        case PIXELFORMAT_COMPRESSED_DXT1_RGBA: formatStr = "COMPRESSED_DXT1_RGBA";
+        case PIXELFORMAT_COMPRESSED_DXT1_RGBA:
+            formatStr = "COMPRESSED_DXT1_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_DXT3_RGBA: formatStr = "COMPRESSED_DXT3_RGBA";
+        case PIXELFORMAT_COMPRESSED_DXT3_RGBA:
+            formatStr = "COMPRESSED_DXT3_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_DXT5_RGBA: formatStr = "COMPRESSED_DXT5_RGBA";
+        case PIXELFORMAT_COMPRESSED_DXT5_RGBA:
+            formatStr = "COMPRESSED_DXT5_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_ETC1_RGB: formatStr = "COMPRESSED_ETC1_RGB";
+        case PIXELFORMAT_COMPRESSED_ETC1_RGB:
+            formatStr = "COMPRESSED_ETC1_RGB";
             break;
-        case PIXELFORMAT_COMPRESSED_ETC2_RGB: formatStr = "COMPRESSED_ETC2_RGB";
+        case PIXELFORMAT_COMPRESSED_ETC2_RGB:
+            formatStr = "COMPRESSED_ETC2_RGB";
             break;
-        case PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA: formatStr = "COMPRESSED_ETC2_EAC_RGBA";
+        case PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA:
+            formatStr = "COMPRESSED_ETC2_EAC_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_PVRT_RGB: formatStr = "COMPRESSED_PVRT_RGB";
+        case PIXELFORMAT_COMPRESSED_PVRT_RGB:
+            formatStr = "COMPRESSED_PVRT_RGB";
             break;
-        case PIXELFORMAT_COMPRESSED_PVRT_RGBA: formatStr = "COMPRESSED_PVRT_RGBA";
+        case PIXELFORMAT_COMPRESSED_PVRT_RGBA:
+            formatStr = "COMPRESSED_PVRT_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA: formatStr = "COMPRESSED_ASTC_4x4_RGBA";
+        case PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA:
+            formatStr = "COMPRESSED_ASTC_4x4_RGBA";
             break;
-        case PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA: formatStr = "COMPRESSED_ASTC_8x8_RGBA";
+        case PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA:
+            formatStr = "COMPRESSED_ASTC_8x8_RGBA";
             break;
-        default: formatStr = "UNKNOWN_FORMAT";
+        default:
+            formatStr = "UNKNOWN_FORMAT";
             break;
     }
 
@@ -512,7 +551,7 @@ u0 open_sib_iterate(slfile_t *file) {
         goto END;
     }
 
-NEXT:
+    NEXT:
     // File after the one we found
     if (self_found == 1 && is_image(file->full_path)) {
         strcpy(next_sib, file->full_path);
@@ -520,14 +559,14 @@ NEXT:
         goto END;
     }
 
-PREV:
+    PREV:
     // File before the one we found
     if (!self_found && is_image(file->full_path)) {
         strcpy(prev_sib, file->full_path);
         goto END;
     }
 
-END:
+    END:
     slfile_free(file);
 }
 
@@ -546,10 +585,10 @@ u0 Open_Sibling(f32 *direction) {
     next_sib[0] = 0;
 
     dir_iterate(dir, open_sib_iterate,
-                (file_skip_flags){
-                    .keep_nav = 0, .skip_hidden = 1,
-                    .recurse = 0, .skip_files = 0,
-                    .skip_directories = 1
+                (file_skip_flags) {
+                        .keep_nav = 0, .skip_hidden = 1,
+                        .recurse = 0, .skip_files = 0,
+                        .skip_directories = 1
                 });
 
     //TODO

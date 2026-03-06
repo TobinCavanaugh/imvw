@@ -77,5 +77,19 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
         /*return*/
         color;
     });
+
+
+    out_settings->bg_color_alt = ( {
+        Color color = BLACK;
+
+        cJSON *color_obj = cJSON_GetObjectItem(settings, "bg_color_alt");
+        color.r = cJSON_GetNumberValue(cJSON_GetObjectItem(color_obj, "r"));
+        color.g = cJSON_GetNumberValue(cJSON_GetObjectItem(color_obj, "g"));
+        color.b = cJSON_GetNumberValue(cJSON_GetObjectItem(color_obj, "b"));
+        color.a = cJSON_GetNumberValue(cJSON_GetObjectItem(color_obj, "a"));
+
+        /*return*/
+        color;
+    });
 }
 #endif //SETTINGS_LOADER_H
