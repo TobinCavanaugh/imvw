@@ -46,6 +46,9 @@ typedef struct {
 
     i32 window_width, window_height;
 
+    Shader *loaded_shaders;
+    u32 loaded_shader_count;
+
     Font current_font;
 
     i64 default_wind_proc;

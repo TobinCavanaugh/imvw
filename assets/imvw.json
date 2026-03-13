@@ -13,7 +13,7 @@
     "max_window_h": 640,
     "min_window_w": 160,
     "min_window_h": 160,
-    "target_fps" : 60,
+    "target_fps": 60,
     "texture_filter": "TRILINEAR",
     "bg_color": {
       "r": 0,
@@ -28,6 +28,13 @@
       "a": 255
     }
   },
+  "shaders": [
+    {
+      "name": "PixelLines",
+      "enabled": true,
+      "path": "assets/grid.fs"
+    }
+  ],
   "scripts": [
     "example.py"
   ],
@@ -54,8 +61,7 @@
     },
     {
       "func": "Toggle_BG_Color",
-      "press": "t",
-      "modifier": ""
+      "press": "t"
     },
     {
       "func": "exit",

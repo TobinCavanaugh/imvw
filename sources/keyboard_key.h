@@ -5,6 +5,7 @@
 #ifndef KEYBOARD_KEY_H
 #define KEYBOARD_KEY_H
 // #include "raylib.h"
+#include "dialect.h"
 
 typedef struct {
     char name[32];

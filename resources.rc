@@ -1,2 +1,5 @@
 #define IDI_ICON1 101
 IDI_ICON1 ICON "icons\\imvw_512.ico"
+
+#define IRD_GIF_LOADING 102
+IDR_GIF_LOADING RCDATA "assets\\loading.gif"

@@ -7,6 +7,15 @@
 
 #include "dialect.h"
 
+// TODO Allow custom shader args
+typedef struct {
+    char *name;
+
+    char *fs_path;
+    char *vs_path;
+    u8 enabled;
+} custom_shader_t;
+
 typedef struct {
     f32 padding;
     u8 on_top;
@@ -22,6 +31,9 @@ typedef struct {
 
     u8 properties_show; // TODO put in JSON
     char *program_font_path; // TODO put in JSON
+
+    custom_shader_t **shaders;
+    u32 shader_count;
 
     i32 target_fps;
 
