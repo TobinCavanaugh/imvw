@@ -59,7 +59,7 @@ u0 Camera_Home_ResetZoom();
 
 u0 Toggle_Trilinear_Filtering();
 
-u0 Camera_Pan();
+u0 Camera_PanMouse();
 
 u0 Open_File_Dialog();
 
@@ -84,5 +84,11 @@ u0 Open_Sibling(f32 *direction);
 u0 Toggle_Properties();
 
 u0 Toggle_BG_Color();
+
+u0 Camera_ZoomHold(float amount);
+
+
+u0 Camera_PanX(float x);
+u0 Camera_PanY(float y);
 
 #endif //IMVW_INTERFACE_H

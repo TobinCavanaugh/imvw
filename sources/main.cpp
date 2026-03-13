@@ -1,50 +1,19 @@
 // #define PLATFORM_DESKTOP_SDL 1
 
-#define SUPPORT_FILEFORMAT_PNG 1
-#define SUPPORT_FILEFORMAT_BMP 1
-#define SUPPORT_FILEFORMAT_TGA 1
-#define SUPPORT_FILEFORMAT_JPG 1
-#define SUPPORT_FILEFORMAT_GIF 1
-#define SUPPORT_FILEFORMAT_PIC 1
-#define SUPPORT_FILEFORMAT_HDR 1
-#define SUPPORT_FILEFORMAT_PNM 1
-#define SUPPORT_FILEFORMAT_PSD 1
+#define SUPPORT_FILEFORMAT_PNG 1 // works
+#define SUPPORT_FILEFORMAT_BMP 1 // no work
+#define SUPPORT_FILEFORMAT_TGA 1 // no work
+#define SUPPORT_FILEFORMAT_JPG 1 // no work
+#define SUPPORT_FILEFORMAT_GIF 1 // works, no playback which is ok
+#define SUPPORT_FILEFORMAT_PIC 1 // seems not to work. very low priority
+#define SUPPORT_FILEFORMAT_HDR 1 // doesn't work, low priority
+#define SUPPORT_FILEFORMAT_PNM 1 // doesn't work, low priority
+#define SUPPORT_FILEFORMAT_PSD 1 // doesn't work, low priority
 
 #define STB_IMAGE_STATIC
-#define STB_SUPPORT_JPG
 
-//#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
 #include "external/stb_image.h"
-
-// #include "raylib.h"
-// #define Rectangle RECTANGLE
-// #define CloseWindow RLCloseWindow
-// #define CloseWindow() ({ rlglClose(); SendMessage((HWND) GetWindowHandle(), WM_CLOSE, 0, 0 ); })
-// #define ShowCursor  RLShowCursor
-// #define LoadImage   RLLoadImage
-// #define PlaySound   RLPlaySound
-// #define DrawText    RLDrawText
-// #define DrawTextEx  RLDrawTextEx
-
-//// --- Windows / Raylib compatibility block ---
-//#define CloseWindow Win32_CloseWindow
-//#define Rectangle Win32_Rectangle
-//#define ShowCursor Win32_ShowCursor
-//
-//#include <windows.h>
-//#include <shellapi.h> // For ShellExecute
-//#include <shlwapi.h>  // For StrFormatByteSize64
-//#include <shlobj.h>   // For SHGetFolderPathA
-//
-//// Undefine Windows macros that conflict with Raylib
-//#undef CloseWindow
-//#undef Rectangle
-//#undef ShowCursor
-//#undef LoadImage
-//#undef DrawText
-//#undef DrawTextEx
-//#undef PlaySound
-//// --------------------------------------------
 
 #include "win_include.h"
 
@@ -310,7 +279,7 @@ i32 main(i32 argc, char **argv) {
     SetTargetFPS(60);
 
     flut_add(exit), flut_add(puts);
-    flut_add(Camera_Pan);
+    flut_add(Camera_PanMouse);
     flut_add(Camera_Home_ResetZoom);
     flut_add(Camera_Home_NoResetZoom);
     flut_add(Reload);
@@ -326,6 +295,11 @@ i32 main(i32 argc, char **argv) {
     flut_add(printf);
     flut_add(Toggle_Properties);
     flut_add(Toggle_BG_Color);
+    flut_add(Camera_ZoomHold);
+
+    flut_add(Camera_PanX);
+    flut_add(Camera_PanY);
+
 
     ctx.target_camera = ctx.real_camera;
 
@@ -403,9 +377,14 @@ i32 main(i32 argc, char **argv) {
             settings.maximized = IsWindowMaximized();
         }
 
+        ctx.window_width = GetRenderWidth();
+        ctx.window_height = GetRenderHeight();
+
         // TODO MIGRATE TO JSON
 
-        
+        // TODO HJKL controls for moving the camera around
+        // TODO Add +/- for zoom
+
         // Maximize / hide border
         if (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER))) {
             if (IsWindowMaximized()) {
@@ -468,24 +447,10 @@ i32 main(i32 argc, char **argv) {
             ctx.target_camera.offset = GetMousePosition();
             ctx.target_camera.target = mwp;
 
-            // Zooming feels slow at small values
-            // TODO this sucks
-            ctx.target_camera.zoom += GetMouseWheelMove() * GetFrameTime() * SHIFT_FINE *
-                                      settings.zoom_speed *
-                                      (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
-                                      (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
-                                      (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
-                                      (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
-                                      (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
-                                      (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
-                                      (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
+            Camera_ZoomHold(GetMouseWheelMove() * GetFrameTime());
 
-            f32 max_zoom_in =
-                    100.0f / (max(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
             // f32 min_zoom_out = max(GetScreenHeight(), GetScreenWidth()) ;
             // f32 min_zoom_out = max(ctx.current_texture.width, ctx.current_texture.height);
-            f32 min_zoom_out = 128;
-            ctx.target_camera.zoom = max(min(ctx.target_camera.zoom, min_zoom_out), max_zoom_in);
             // printf("[[%.5f]]", ctx.target_camera.zoom);
         }
 
@@ -548,7 +513,9 @@ i32 main(i32 argc, char **argv) {
                 ctx.tex_need_filter = 0;
             }
 
+            // TODO HERE
             ClearBackground(ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color);
+
 
             // // TODO construction lines
             // // Get the bounds of the visible area in world coordinates

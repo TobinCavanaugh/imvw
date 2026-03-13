@@ -114,6 +114,7 @@ u0 Load(char *path) {
     SetWindowTitle(ctx.current_window_title);
 }
 
+// TODO Also make reload settings etc.
 u0 Reload() {
     Load(ctx.current_path);
 }
@@ -141,6 +142,24 @@ u0 Rotate_By_Mouse() {
 
     // ctx.target_camera.rotation += ctx.mouse_delta.y / (f32) GetScreenWidth() * 360.0f * SHIFT_FINE *
     //         (ctx.frame_time * 100.0f * settings.rotation_speed);
+}
+
+u0 Camera_ZoomHold(float amount) {
+    // Zooming feels slow at small values
+    // TODO this sucks
+    ctx.target_camera.zoom += amount * SHIFT_FINE *
+                              settings.zoom_speed *
+                              (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
+                              (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
+                              (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
+                              (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
+                              (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
+                              (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
+                              (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
+
+    f32 max_zoom_in = 100.0f / (fmax(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
+    f32 min_zoom_out = 128;
+    ctx.target_camera.zoom = fmax(fmin(ctx.target_camera.zoom, min_zoom_out), max_zoom_in);
 }
 
 u0 Camera_Home_Internal(u8 reset_zoom) {
@@ -191,7 +210,16 @@ u0 Toggle_Trilinear_Filtering() {
     }
 }
 
-u0 Camera_Pan() {
+// TODO THIS SUCKS
+u0 Camera_PanX(float x) {
+    ctx.target_camera.target.x += x;
+}
+
+u0 Camera_PanY(float y) {
+    ctx.target_camera.target.y += y;
+}
+
+u0 Camera_PanMouse() {
     //TODO Camera panning is a little shitty and laggy
 
     // v2f d = GetMouseDelta();
@@ -208,9 +236,9 @@ u0 Camera_Pan() {
 }
 
 u0 Open_File_Dialog() {
-    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg"};
+    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.psd", "*.webp", "*.bmp", "*.pnm", "*.hdr", "*.gif", "*.tga"};
     char *out = tinyfd_openFileDialog(
-            "Select a PNG or JPEG file",
+            "Select an image file",
             NULL,
             3,
             lFilterPatterns,

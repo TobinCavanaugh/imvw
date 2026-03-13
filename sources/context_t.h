@@ -44,6 +44,8 @@ typedef struct {
     Camera2D real_camera;
     Camera2D target_camera;
 
+    i32 window_width, window_height;
+
     Font current_font;
 
     i64 default_wind_proc;

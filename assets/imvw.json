@@ -13,6 +13,7 @@
     "max_window_h": 640,
     "min_window_w": 160,
     "min_window_h": 160,
+    "target_fps" : 60,
     "texture_filter": "TRILINEAR",
     "bg_color": {
       "r": 0,
@@ -35,6 +36,21 @@
       "func": "exit",
       "press": "W",
       "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "Camera_PanX",
+      "hold": "h",
+      "arg": -500.0
+    },
+    {
+      "func": "Camera_ZoomHold",
+      "hold": "equal",
+      "arg": 100.0
+    },
+    {
+      "func": "Camera_ZoomHold",
+      "hold": "minus",
+      "arg": -100.0
     },
     {
       "func": "Toggle_BG_Color",
@@ -64,11 +80,11 @@
       "modifier": "KEY_LEFT_CONTROL"
     },
     {
-      "func": "Camera_Pan",
+      "func": "Camera_PanMouse",
       "button": "MOUSE_BUTTON_LEFT"
     },
     {
-      "func": "Camera_Pan",
+      "func": "Camera_PanMouse",
       "button": "BUTTON_MIDDLE"
     },
     {

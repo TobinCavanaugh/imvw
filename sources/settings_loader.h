@@ -44,6 +44,8 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
     out_settings->min_window_w = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "min_window_w"));
     out_settings->min_window_h = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "min_window_h"));
 
+    out_settings->target_fps = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "target_fps"));
+
     char *filter_name = cJSON_GetStringValue(cJSON_GetObjectItem(settings, "texture_filter"));
 
     if (filter_name) {

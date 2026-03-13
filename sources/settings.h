@@ -23,6 +23,8 @@ typedef struct {
     u8 properties_show; // TODO put in JSON
     char *program_font_path; // TODO put in JSON
 
+    i32 target_fps;
+
     f32 lerpSpeed_pan;
     f32 lerpSpeed_zoom;
     f32 lerpSpeed_rotate;
