@@ -65,8 +65,9 @@ context_t ctx = {
         },
         .current_path = "",
         .current_window_title = "",
-        .loaded_shaders = NULL,
-        .loaded_shader_count = 0
+        .shaders_loaded_arr = NULL,
+        .shaders_count = 0,
+        .shaders_custom_arr = NULL
 };
 
 context_t prev_ctx;
@@ -158,32 +159,69 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
 }
 
 void load_custom_shaders() {
-    if (settings.shader_count == 0) return;
-
-    // Unload existing if any
-    if (ctx.loaded_shaders != NULL) {
-        for (u32 i = 0; i < ctx.loaded_shader_count; i++) {
-            UnloadShader(ctx.loaded_shaders[i]);
+    // 1. Cleanup existing shaders and memory
+    if (ctx.shaders_loaded_arr != NULL) {
+        for (i32 i = 0; i < ctx.shaders_count; i++) {
+            if (ctx.shaders_loaded_arr[i].id != 0) {
+                UnloadShader(ctx.shaders_loaded_arr[i]);
+            }
         }
-        free(ctx.loaded_shaders);
+        free(ctx.shaders_loaded_arr);
+        ctx.shaders_loaded_arr = NULL;
     }
 
-    ctx.loaded_shaders = (Shader *) malloc(sizeof(Shader) * settings.shader_count);
-    ctx.loaded_shader_count = 0;
+    if (ctx.shaders_custom_arr != NULL) {
+        free(ctx.shaders_custom_arr);
+        ctx.shaders_custom_arr = NULL;
+    }
 
-    for (u32 i = 0; i < settings.shader_count; i++) {
+    ctx.shaders_count = 0;
+
+    // 2. Early exit if no shaders defined in settings
+    if (settings.shader_count <= 0) return;
+
+    // 3. Allocate arrays based on settings count
+    ctx.shaders_loaded_arr = (Shader *) malloc(sizeof(Shader) * settings.shader_count);
+    ctx.shaders_custom_arr = (custom_shader_t *) malloc(sizeof(custom_shader_t) * settings.shader_count);
+
+    if (!ctx.shaders_loaded_arr || !ctx.shaders_custom_arr) {
+        fprintf(stderr, "IMVW|ERR: Failed to allocate memory for shaders\n");
+        return;
+    }
+
+    // 4. Load shaders from paths
+    for (i32 i = 0; i < settings.shader_count; i++) {
         custom_shader_t *s = settings.shaders[i];
-        // Check if fs_path is valid
-        // TODO HERE FIX HARDCODED
-        const char *str = "C:\\Users\\tobin\\Documents\\repos\\imgvw\\raylib-cmake-template\\assets\\grid.fs";
-        if (s->fs_path && FileExists(str)) {
-            ctx.loaded_shaders[ctx.loaded_shader_count] = LoadShader(s->vs_path, str);
-            ctx.loaded_shader_count++;
-            printf("IMVW|LOG: Loaded custom shader: `%s`\n", s->fs_path);
-        } else {
-            fprintf(stderr, "IMVW|ERR: Shader file not found: `%s`\n", s->fs_path ? s->fs_path : "NULL");
-        }
 
+        // Copy metadata to context for UI/Toggle access
+        ctx.shaders_custom_arr[i] = *s;
+
+        if (s->fs_path) {
+            char full_vs_path[PATH_MAX];
+            char full_fs_path[PATH_MAX];
+
+            // Construct paths; allow for NULL vertex shader (Raylib default)
+            const char *vs = NULL;
+            if (s->vs_path && strlen(s->vs_path) > 0) {
+                snprintf(full_vs_path, sizeof(full_vs_path), "%s%s", ASSETS_PATH, s->vs_path);
+                vs = full_vs_path;
+            }
+            snprintf(full_fs_path, sizeof(full_fs_path), "%s%s", ASSETS_PATH, s->fs_path);
+
+            if (FileExists(full_fs_path)) {
+                ctx.shaders_loaded_arr[ctx.shaders_count] = LoadShader(vs, full_fs_path);
+
+                // Verify the shader compiled correctly
+                if (ctx.shaders_loaded_arr[ctx.shaders_count].id != 0) {
+                    printf("IMVW|LOG: Loaded custom shader [%d]: %s\n", ctx.shaders_count, s->name);
+                    ctx.shaders_count++;
+                } else {
+                    fprintf(stderr, "IMVW|ERR: Shader compilation failed: %s\n", full_fs_path);
+                }
+            } else {
+                fprintf(stderr, "IMVW|ERR: Shader file missing: %s\n", full_fs_path);
+            }
+        }
     }
 }
 
@@ -267,8 +305,10 @@ i32 main(i32 argc, char **argv) {
     flut_add(Toggle_Properties);
     flut_add(Toggle_BG_Color);
     flut_add(Camera_ZoomHold);
+    flut_add(Camera_ZoomAmt);
     flut_add(Camera_PanX);
     flut_add(Camera_PanY);
+    flut_add(Shader_Toggle);
 
     ctx.target_camera = ctx.real_camera;
 
@@ -441,9 +481,11 @@ i32 main(i32 argc, char **argv) {
 
         // --- Custom Shader Pass ---
         BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
-        for (u32 i = 0; i < ctx.loaded_shader_count; i++) {
-            Shader shader = ctx.loaded_shaders[i];
+        for (i32 i = 0; i < ctx.shaders_count; i++) {
+            custom_shader_t info = ctx.shaders_custom_arr[i];
+            if(!info.enabled) continue;
 
+            Shader shader = ctx.shaders_loaded_arr[i];
             // Standard Uniforms
             int resLoc = GetShaderLocation(shader, "screenResolution");
             int targetLoc = GetShaderLocation(shader, "cameraTarget");

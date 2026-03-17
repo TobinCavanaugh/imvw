@@ -35,20 +35,23 @@ PyObject **scripts_array = NULL;
 i32 scripts_count = 0;
 
 u0 scripts_add(char *name) {
+    char full_path[512];
+    snprintf(full_path, sizeof(full_path), "%s%s", ASSETS_PATH, name);
+
     if (!Py_IsInitialized()) {
         fprintf(stderr, "Attempting to run python scripts with python uninitialized. Run Enable_Python() please.\n");
         return;
     }
 
     // Test if file exists
-    if (!FileExists(name)) {
-        ERR_PY("Failed to load script `%s` due to file not existing", name)
+    if (!FileExists(full_path)) {
+        ERR_PY("Failed to load script `%s` due to file not existing", full_path)
         return;
     }
 
     scripts_array = (PyObject **) realloc(scripts_array, (scripts_count + 1) * sizeof(PyObject *));
 
-    PyObject *pyname = PyUnicode_FromString(name); //segfault here...
+    PyObject *pyname = PyUnicode_FromString(full_path);
     PyObject *mod = PyImport_Import(pyname);
     PyModule_AddFunctions(mod, ExposedFunctions);
     Py_DECREF(pyname);

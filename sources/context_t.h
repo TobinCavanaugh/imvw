@@ -9,6 +9,7 @@
 #include "dialect.h"
 #include <pthread.h>
 #include "GLFW/glfw3.h"
+#include "settings.h"
 
 #define _Atomic
 #include <stdatomic.h>
@@ -46,8 +47,9 @@ typedef struct {
 
     i32 window_width, window_height;
 
-    Shader *loaded_shaders;
-    u32 loaded_shader_count;
+    Shader *shaders_loaded_arr;
+    custom_shader_t *shaders_custom_arr;
+    i32 shaders_count;
 
     Font current_font;
 

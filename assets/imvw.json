@@ -32,7 +32,7 @@
     {
       "name": "PixelLines",
       "enabled": true,
-      "path": "assets/grid.fs"
+      "path": "grid.fs"
     }
   ],
   "scripts": [
@@ -50,9 +50,26 @@
       "arg": -500.0
     },
     {
+      "func": "Camera_ZoomAmt",
+      "hold": "equal",
+      "arg": 50.0,
+      "modifier": "KEY_LEFT_SHIFT"
+    },
+    {
+      "func": "Camera_ZoomAmt",
+      "hold": "minus",
+      "arg": -50.0,
+      "modifier": "KEY_LEFT_SHIFT"
+    },
+    {
       "func": "Camera_ZoomHold",
       "hold": "equal",
       "arg": 100.0
+    },
+    {
+      "func": "Shader_Toggle",
+      "arg": "PixelLines",
+      "press": "G"
     },
     {
       "func": "Camera_ZoomHold",
@@ -86,16 +103,17 @@
       "modifier": "KEY_LEFT_CONTROL"
     },
     {
+      "func": "Relaunch",
+      "press": "KEY_R",
+      "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
       "func": "Camera_PanMouse",
       "button": "MOUSE_BUTTON_LEFT"
     },
     {
       "func": "Camera_PanMouse",
       "button": "BUTTON_MIDDLE"
-    },
-    {
-      "func": "Camera_Pan",
-      "hold": "G"
     },
     {
       "func": "Rotate_By_Mouse",

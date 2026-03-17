@@ -61,6 +61,8 @@ u0 Toggle_Trilinear_Filtering();
 
 u0 Camera_PanMouse();
 
+u0 Camera_ZoomAmt(float amount);
+
 u0 Open_File_Dialog();
 
 u0 Copy_To_Clipboard();
@@ -87,6 +89,7 @@ u0 Toggle_BG_Color();
 
 u0 Camera_ZoomHold(float amount);
 
+u0 Shader_Toggle(char * str);
 
 u0 Camera_PanX(float x);
 u0 Camera_PanY(float y);

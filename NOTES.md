@@ -4,7 +4,7 @@ Functions placed in the PyMethodDef array cannot return void, instead they must
 return a `PyObject*`, for a void function, return a `PyTuple_New(0)`
 
 ### TODO:
-
+- ImGui
 - Rework background color to allow for a 'c' keybind to show the color prompt and set bg color \
 - SVG Support
 - Loading gif
@@ -17,3 +17,5 @@ return a `PyObject*`, for a void function, return a `PyTuple_New(0)`
 - Construction lines background or something
 - Better zooming
 - Overlays system
+- ICO viewing
+- 

@@ -144,22 +144,49 @@ u0 Rotate_By_Mouse() {
     //         (ctx.frame_time * 100.0f * settings.rotation_speed);
 }
 
-u0 Camera_ZoomHold(float amount) {
-    // Zooming feels slow at small values
-    // TODO this sucks
-    ctx.target_camera.zoom += amount * SHIFT_FINE *
-                              settings.zoom_speed *
-                              (ctx.target_camera.zoom > 1 ? 2.0f : 1.0f) *
-                              (ctx.target_camera.zoom > 2 ? 2.0f : 1.0f) *
-                              (ctx.target_camera.zoom > 3 ? 2.0f : 1.0f) *
-                              (ctx.target_camera.zoom > 4 ? 1.5f : 1.0f) *
-                              (ctx.target_camera.zoom > 9 ? 1.5f : 1.0f) *
-                              (ctx.target_camera.zoom > 50 ? 1.5f : 1.0f) *
-                              (ctx.target_camera.zoom > 80 ? 2.0f : 1.0f) * 2.0f;
+u0 Shader_Toggle(char *str) {
+    for (i32 i = 0; i < ctx.shaders_count; i++) {
+        custom_shader_t *t = &ctx.shaders_custom_arr[i];
+        if (strcmp(str, t->name) == 0) t->enabled = !t->enabled;
+    }
+}
 
-    f32 max_zoom_in = 100.0f / (fmax(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
-    f32 min_zoom_out = 128;
-    ctx.target_camera.zoom = fmax(fmin(ctx.target_camera.zoom, min_zoom_out), max_zoom_in);
+u0 Camera_ZoomAmt(float amount) {
+    // Calculate the exponential scale factor
+    // You may need to tweak settings.zoom_speed slightly since the math changed
+    f32 scale_factor = expf(amount * SHIFT_FINE * settings.zoom_speed);
+
+    // Apply multiplicative zoom
+    ctx.target_camera.zoom *= scale_factor;
+
+    // Calculate bounds
+    // The smallest we allow the image to get (e.g., shrinking it to fit ~100px)
+    f32 min_zoom_out = 100.0f / (fmaxf(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
+
+    // The largest we allow the image to get (128x scale)
+    f32 max_zoom_in = 128.0f;
+
+    // Clamp the zoom
+    ctx.target_camera.zoom = fmaxf(fminf(ctx.target_camera.zoom, max_zoom_in), min_zoom_out);
+}
+
+u0 Camera_ZoomHold(float amount) {
+// Calculate the exponential scale factor
+    // You may need to tweak settings.zoom_speed slightly since the math changed
+    f32 scale_factor = expf(amount * SHIFT_FINE * settings.zoom_speed);
+
+    // Apply multiplicative zoom
+    ctx.target_camera.zoom *= scale_factor;
+
+    // Calculate bounds
+    // The smallest we allow the image to get (e.g., shrinking it to fit ~100px)
+    f32 min_zoom_out = 100.0f / (fmaxf(ctx.current_tex.height, ctx.current_tex.width) + settings.padding * 2.0f);
+
+    // The largest we allow the image to get (128x scale)
+    f32 max_zoom_in = 128.0f;
+
+    // Clamp the zoom
+    ctx.target_camera.zoom = fmaxf(fminf(ctx.target_camera.zoom, max_zoom_in), min_zoom_out);
 }
 
 u0 Camera_Home_Internal(u8 reset_zoom) {
@@ -236,7 +263,8 @@ u0 Camera_PanMouse() {
 }
 
 u0 Open_File_Dialog() {
-    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.psd", "*.webp", "*.bmp", "*.pnm", "*.hdr", "*.gif", "*.tga"};
+    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.psd", "*.webp", "*.bmp", "*.pnm",
+                                     "*.hdr", "*.gif", "*.tga"};
     char *out = tinyfd_openFileDialog(
             "Select an image file",
             NULL,
