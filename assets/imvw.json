@@ -5,7 +5,7 @@
     "undecorated": false,
     "rotation_speed": 920.0,
     "python_scripting": true,
-    "zoom_speed": 1.0,
+    "zoom_speed": 2.0,
     "lerpSpeed_pan": 30.0,
     "lerpSpeed_zoom": 20.0,
     "lerpSpeed_rotate": 10.0,
@@ -31,7 +31,7 @@
   "shaders": [
     {
       "name": "PixelLines",
-      "enabled": true,
+      "enabled": false,
       "path": "grid.fs"
     }
   ],
@@ -67,14 +67,18 @@
       "arg": 100.0
     },
     {
+      "func": "Camera_ZoomHold",
+      "hold": "minus",
+      "arg": -100.0
+    },
+    {
       "func": "Shader_Toggle",
       "arg": "PixelLines",
       "press": "G"
     },
     {
-      "func": "Camera_ZoomHold",
-      "hold": "minus",
-      "arg": -100.0
+      "func": "Toggle_Trilinear_Filtering",
+      "press": "G"
     },
     {
       "func": "Toggle_BG_Color",
@@ -118,10 +122,6 @@
     {
       "func": "Rotate_By_Mouse",
       "hold": "R"
-    },
-    {
-      "func": "Toggle_Trilinear_Filtering",
-      "press": "B"
     },
     {
       "func": "Copy_To_Clipboard",

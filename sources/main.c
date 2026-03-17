@@ -480,13 +480,16 @@ i32 main(i32 argc, char **argv) {
         }
 
         // --- Custom Shader Pass ---
+
+        // TODO blend mode should be set by custom_shader_t
         BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
         for (i32 i = 0; i < ctx.shaders_count; i++) {
             custom_shader_t info = ctx.shaders_custom_arr[i];
-            if(!info.enabled) continue;
-
             Shader shader = ctx.shaders_loaded_arr[i];
+            if (!info.enabled) continue;
+
             // Standard Uniforms
+            // TODO SET UP MORE SHADER LOCS. IDK HWO THIS WORKS
             int resLoc = GetShaderLocation(shader, "screenResolution");
             int targetLoc = GetShaderLocation(shader, "cameraTarget");
             int offsetLoc = GetShaderLocation(shader, "cameraOffset");
