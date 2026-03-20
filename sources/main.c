@@ -72,6 +72,13 @@ context_t ctx = {
 
 context_t prev_ctx;
 
+u8 AnyModifierDown() {
+    return IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT) ||
+           IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+           IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
+           IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+}
+
 void *thread_playerinput(void *arg) {
     prev_ctx = ctx;
     ctx.one = 1;
@@ -82,29 +89,34 @@ void *thread_playerinput(void *arg) {
                 key_action_t a = actions_array[i];
                 u8 happened = 0;
 
-                happened += (a.press != KEY_NULL && IsKeyPressed(a.press) &&
-                             (a.modifier == KEY_NULL || IsKeyDown(a.modifier)));
+                u8 modifier_match = false;
 
-                happened += ((a.hold != KEY_NULL) && (IsKeyDown(a.hold)) &&
-                             (a.modifier == KEY_NULL || IsKeyDown(a.modifier)));
+                if (a.modifier == KEY_ANY) {
+                    modifier_match = true;
+                } else if (a.modifier != KEY_NULL) {
+                    modifier_match = IsKeyDown(a.modifier);
+                } else {
+                    modifier_match = !AnyModifierDown();
+                }
 
-                happened += ((a.priv_use_mouse && IsMouseButtonDown(a.button)) &&
-                             (a.modifier == KEY_NULL || IsKeyDown(a.modifier)));
+                happened += (a.press != KEY_NULL && IsKeyPressed(a.press) && modifier_match);
+                happened += (a.hold != KEY_NULL && IsKeyDown(a.hold) && modifier_match);
+                happened += (a.priv_use_mouse && IsMouseButtonDown(a.button) && modifier_match);
 
-                if (happened) {
-                    flut_func_t fft;
-                    if (flut_get(a.func, &fft)) {
-                        if (a.arg_type == ARG_TYPE_NONE) {
-                            fft.func(NULL);
-                        } else {
-                            if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
-                            else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
-                            else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
-                            else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
-                        }
+                if (!happened) continue;
+
+                flut_func_t fft;
+                if (flut_get(a.func, &fft)) {
+                    if (a.arg_type == ARG_TYPE_NONE) {
+                        fft.func(NULL);
                     } else {
-                        fprintf(stderr, "Could not find function of name `%s`\n", a.func);
+                        if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
+                        else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
+                        else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
+                        else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
                     }
+                } else {
+                    fprintf(stderr, "Could not find function of name `%s`\n", a.func);
                 }
             }
         }
@@ -242,6 +254,7 @@ u0 load_all() {
     json_text[size] = '\0';
     fclose(file);
 
+
     cJSON *json_data = cJSON_Parse(json_text);
     if (json_data == NULL) {
         fprintf(stderr, "Failed to parse `imvw.json`.\n");
@@ -309,6 +322,8 @@ i32 main(i32 argc, char **argv) {
     flut_add(Camera_PanX);
     flut_add(Camera_PanY);
     flut_add(Shader_Toggle);
+    flut_add(printf);
+    flut_add(Window_Toggle_Maximized);
 
     ctx.target_camera = ctx.real_camera;
 
@@ -350,21 +365,31 @@ i32 main(i32 argc, char **argv) {
         ctx.mouse_pos = GetMousePosition();
         ctx.mouse_delta = GetMouseDelta();
 
-        if (settings.maximized != IsWindowMaximized()) {
-            Camera_Home_NoResetZoom();
-            settings.maximized = IsWindowMaximized();
-        }
 
         ctx.window_width = GetRenderWidth();
         ctx.window_height = GetRenderHeight();
 
         if (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER))) {
-            if (IsWindowMaximized()) ToggleFullscreen();
-            else {
+            if (IsWindowMaximized()) {
+                settings.maximized = 0;
+                settings.undecorated = 0;
+            } else {
+                settings.maximized = 1;
                 settings.undecorated = !settings.undecorated;
-                settings.undecorated ? SetWindowState(FLAG_WINDOW_UNDECORATED) : ClearWindowState(
-                        FLAG_WINDOW_UNDECORATED);
             }
+        }
+
+        static u8 last_undecorated = 0;
+        if (settings.undecorated != last_undecorated) {
+            settings.undecorated ? SetWindowState(FLAG_WINDOW_UNDECORATED)
+                                 : ClearWindowState(FLAG_WINDOW_UNDECORATED);
+            last_undecorated = settings.undecorated;
+        }
+
+        u8 last_maximized = IsWindowMaximized();
+        if (settings.maximized != last_maximized) {
+            settings.maximized ? MaximizeWindow() : RestoreWindow();
+            Camera_Home_NoResetZoom();
         }
 
         if (IsWindowState(FLAG_WINDOW_TOPMOST) != settings.on_top) {
@@ -379,7 +404,9 @@ i32 main(i32 argc, char **argv) {
             Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
             ctx.target_camera.offset = GetMousePosition();
             ctx.target_camera.target = mwp;
-            Camera_ZoomHold(GetMouseWheelMove() * GetFrameTime());
+
+            f32 z = GetMouseWheelMove() * GetFrameTime();
+            Camera_ZoomHold(&z);
         }
 
         f32 dt = GetFrameTime();
@@ -414,7 +441,9 @@ i32 main(i32 argc, char **argv) {
                 ctx.tex_need_load = 0;
                 ctx.tex_need_filter = 0;
                 Camera_FitWindow();
-                Camera_Home_Internal(true);
+
+                u8 t = true;
+                Camera_Home_Internal(&t);
             }
 
             if (ctx.tex_need_filter && !ctx.tex_loading && !ctx.tex_need_load) {

@@ -45,13 +45,13 @@ u0 Load(char *path);
 
 u0 Reload();
 
-u0 Rotate(f32 amount);
+u0 Rotate(f32* amount);
 
 u0 Rotate_By_Scroll();
 
 u0 Rotate_By_Mouse();
 
-u0 Camera_Home_Internal(u8 reset_zoom);
+u0 Camera_Home_Internal(u8 *reset_zoom);
 
 u0 Camera_Home_NoResetZoom();
 
@@ -61,7 +61,7 @@ u0 Toggle_Trilinear_Filtering();
 
 u0 Camera_PanMouse();
 
-u0 Camera_ZoomAmt(float amount);
+u0 Camera_ZoomAmt(f32 *amount);
 
 u0 Open_File_Dialog();
 
@@ -87,11 +87,14 @@ u0 Toggle_Properties();
 
 u0 Toggle_BG_Color();
 
-u0 Camera_ZoomHold(float amount);
+u0 Camera_ZoomHold(f32* amount);
 
-u0 Shader_Toggle(char * str);
+u0 Shader_Toggle(char *str);
 
-u0 Camera_PanX(float x);
-u0 Camera_PanY(float y);
+u0 Camera_PanX(f32* x);
+u0 Camera_PanY(f32* y);
+
+
+u0 Window_Toggle_Maximized();
 
 #endif //IMVW_INTERFACE_H

@@ -7,7 +7,6 @@
 extern context_t ctx;
 
 u0 load_settings(cJSON *json, settings_t *out_settings) {
-    // 1. Existing Settings Parsing
     cJSON *settings = cJSON_GetObjectItem(json, "settings");
     if (settings) {
         out_settings->padding = cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "padding"));

@@ -14,6 +14,8 @@
     "min_window_w": 160,
     "min_window_h": 160,
     "target_fps": 60,
+    "max_zoom_in": 128,
+    "max_zoom_out": 1,
     "texture_filter": "TRILINEAR",
     "bg_color": {
       "r": 0,
@@ -47,29 +49,74 @@
     {
       "func": "Camera_PanX",
       "hold": "h",
-      "arg": -500.0
+      "arg": -10.0,
+      "modifier": "KEY_ANY"
+    },
+    {
+      "func": "Camera_PanY",
+      "hold": "j",
+      "arg": 10.0,
+      "modifier": "KEY_ANY"
+    },
+    {
+      "func": "Camera_PanX",
+      "hold": "l",
+      "arg": 10.0,
+      "modifier": "KEY_ANY"
+    },
+    {
+      "func": "Camera_PanY",
+      "hold": "k",
+      "arg": -10.0,
+      "modifier": "KEY_ANY"
     },
     {
       "func": "Camera_ZoomAmt",
       "hold": "equal",
-      "arg": 50.0,
+      "arg": 0.1,
       "modifier": "KEY_LEFT_SHIFT"
     },
     {
       "func": "Camera_ZoomAmt",
       "hold": "minus",
-      "arg": -50.0,
+      "arg": -0.1,
       "modifier": "KEY_LEFT_SHIFT"
+    },
+    {
+      "func": "Camera_ZoomAmt",
+      "hold": "equal",
+      "arg": 0.0001,
+      "modifier": "LEFT_ALT"
+    },
+    {
+      "func": "Camera_ZoomAmt",
+      "hold": "minus",
+      "arg": -0.0001,
+      "modifier": "LEFT_ALT"
     },
     {
       "func": "Camera_ZoomHold",
       "hold": "equal",
-      "arg": 100.0
+      "arg": 0.01,
+      "modifier": "KEY_NULL"
     },
     {
       "func": "Camera_ZoomHold",
       "hold": "minus",
-      "arg": -100.0
+      "arg": -0.01,
+      "modifier": "KEY_NULL"
+    },
+    {
+      "func": "Camera_ZoomAmt",
+      "hold": "z",
+      "arg": 0.01,
+      "modifier": "KEY_NULL"
+    },
+    {
+      "func": "Camera_ZoomAmt",
+      "hold": "z",
+      "arg": -0.01,
+      "modifier": "KEY_LEFT_SHIFT"
     },
     {
       "func": "Shader_Toggle",
@@ -91,15 +138,23 @@
     },
     {
       "func": "exit",
-      "press": "KEY_Q"
+      "press": "KEY_Q",
+      "modifier": "KEY_ANY"
     },
     {
       "func": "exit",
-      "press": "KEY_ESCAPE"
+      "press": "KEY_ESCAPE",
+      "modifier": "KEY_ANY"
     },
     {
       "func": "Camera_Home_ResetZoom",
-      "press": "KEY_F"
+      "press": "f",
+      "modifier": "KEY_NULL"
+    },
+    {
+      "func": "Window_Toggle_Maximized",
+      "press": "f",
+      "modifier": "KEY_LEFT_CONTROL"
     },
     {
       "func": "Reload",
@@ -113,11 +168,13 @@
     },
     {
       "func": "Camera_PanMouse",
-      "button": "MOUSE_BUTTON_LEFT"
+      "button": "MOUSE_BUTTON_LEFT",
+      "modifier": "KEY_ANY"
     },
     {
       "func": "Camera_PanMouse",
-      "button": "BUTTON_MIDDLE"
+      "button": "BUTTON_MIDDLE",
+      "modifier": "KEY_ANY"
     },
     {
       "func": "Rotate_By_Mouse",
@@ -130,7 +187,8 @@
     },
     {
       "func": "Open_File_Dialog",
-      "press": "O"
+      "press": "O",
+      "modifier": "KEY_ANY"
     },
     {
       "func": "Toggle_Properties",

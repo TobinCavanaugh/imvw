@@ -46,7 +46,8 @@ typedef struct {
     // u8 priv_use_hold;
 
     // Optional key to be held
-    KeyboardKey modifier; //Optional
+    // KeyboardKey
+    i32 modifier; //Optional
 
     // Mousebutton to be used
     MouseButton button; //Optional
@@ -54,7 +55,8 @@ typedef struct {
 } key_action_t;
 
 u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key_action_t act) {
-    *out_ptr_actions_array = (key_action_t *) realloc(*out_ptr_actions_array, (*out_actions_count + 1) * sizeof(key_action_t));
+    *out_ptr_actions_array = (key_action_t *) realloc(*out_ptr_actions_array,
+                                                      (*out_actions_count + 1) * sizeof(key_action_t));
     if (*out_ptr_actions_array == NULL) {
         exit(123);
     }
@@ -72,7 +74,8 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
     if (actions == NULL) {
         fprintf(stderr, "Failed to load `actions` from your `imvw.json` settings file.\n");
     }
-    i32 array_size = cJSON_GetArraySize(actions); {
+    i32 array_size = cJSON_GetArraySize(actions);
+    {
         i32 i = 0;
         for (; i < array_size; i++) {
             cJSON *action = cJSON_GetArrayItem(actions, i);
@@ -103,7 +106,8 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                 key_action.press = k;
             }
             if (modifier != NULL) {
-                KeyboardKey m = GetKeyFromName(cJSON_GetStringValue(modifier));
+                // TODO Fix for explicit null (?)
+                i32 m = GetKeyFromName(cJSON_GetStringValue(modifier));
                 if (m == KEY_NULL) {
                     fprintf(stderr, "Could not parse modifier `%s` into keyboard key\n",
                             cJSON_GetStringValue(modifier));
@@ -111,7 +115,7 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                 key_action.modifier = m;
             }
             if (hold != NULL) {
-                KeyboardKey h = GetKeyFromName(cJSON_GetStringValue(hold));
+                i32 h = GetKeyFromName(cJSON_GetStringValue(hold));
                 if (h == KEY_NULL) {
                     fprintf(stderr, "Could not parse hold `%s` into keyboard key\n", cJSON_GetStringValue(hold));
                 }
@@ -149,16 +153,17 @@ u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out
                 key_action.modifier == KEY_NULL) {
                 char *x = cJSON_Print(action);
                 fprintf(
-                    stderr,
-                    "Action does not contain an associated key. It will not be added. JSON Contents: \n`\n%s\n`\n", x);
+                        stderr,
+                        "Action does not contain an associated key. It will not be added. JSON Contents: \n`\n%s\n`\n",
+                        x);
                 free(x);
             }
             if (key_action.func == NULL || strlen(key_action.func) == 0) {
                 char *x = cJSON_Print(action);
                 fprintf(
-                    stderr,
-                    "Action does not contain an associated function. It will not be added. JSON Contents: \n`\n%s\n`\n",
-                    x);
+                        stderr,
+                        "Action does not contain an associated function. It will not be added. JSON Contents: \n`\n%s\n`\n",
+                        x);
                 free(x);
             }
 

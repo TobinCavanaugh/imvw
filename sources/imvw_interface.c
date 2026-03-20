@@ -119,13 +119,13 @@ u0 Reload() {
     Load(ctx.current_path);
 }
 
-u0 Rotate(f32 amount) {
+u0 Rotate(f32 *amount) {
     Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
     ctx.target_camera.offset = GetMousePosition();
     ctx.target_camera.target = mwp;
 
     //TODO SHIFT_FINE should be a setting
-    ctx.target_camera.rotation += amount * ctx.frame_time * 125.0f * settings.rotation_speed * SHIFT_FINE;
+    ctx.target_camera.rotation += *amount * ctx.frame_time * 125.0f * settings.rotation_speed * SHIFT_FINE;
 }
 
 u0 Toggle_BG_Color() {
@@ -133,7 +133,8 @@ u0 Toggle_BG_Color() {
 }
 
 u0 Rotate_By_Scroll() {
-    Rotate(GetMouseWheelMove());
+    f32 c = GetMouseWheelMove();
+    Rotate(&c);
 }
 
 u0 Rotate_By_Mouse() {
@@ -151,10 +152,10 @@ u0 Shader_Toggle(char *str) {
     }
 }
 
-u0 Camera_ZoomAmt(float amount) {
+u0 Camera_ZoomAmt(f32 *amount) {
     // Calculate the exponential scale factor
     // You may need to tweak settings.zoom_speed slightly since the math changed
-    f32 scale_factor = expf(amount * SHIFT_FINE * settings.zoom_speed);
+    f32 scale_factor = expf(*amount * SHIFT_FINE * settings.zoom_speed);
 
     // Apply multiplicative zoom
     ctx.target_camera.zoom *= scale_factor;
@@ -170,10 +171,10 @@ u0 Camera_ZoomAmt(float amount) {
     ctx.target_camera.zoom = fmaxf(fminf(ctx.target_camera.zoom, max_zoom_in), min_zoom_out);
 }
 
-u0 Camera_ZoomHold(float amount) {
-// Calculate the exponential scale factor
+u0 Camera_ZoomHold(f32 *amount) {
+    // Calculate the exponential scale factor
     // You may need to tweak settings.zoom_speed slightly since the math changed
-    f32 scale_factor = expf(amount * SHIFT_FINE * settings.zoom_speed);
+    f32 scale_factor = expf(*amount * SHIFT_FINE * settings.zoom_speed);
 
     // Apply multiplicative zoom
     ctx.target_camera.zoom *= scale_factor;
@@ -189,7 +190,7 @@ u0 Camera_ZoomHold(float amount) {
     ctx.target_camera.zoom = fmaxf(fminf(ctx.target_camera.zoom, max_zoom_in), min_zoom_out);
 }
 
-u0 Camera_Home_Internal(u8 reset_zoom) {
+u0 Camera_Home_Internal(u8 *reset_zoom) {
     ctx.target_camera.offset = V2f(GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f);
     ctx.target_camera.target = V2f(0, 0);
 
@@ -197,7 +198,7 @@ u0 Camera_Home_Internal(u8 reset_zoom) {
     f32 rot = ctx.target_camera.rotation;
     ctx.target_camera.rotation = roundf(rot / 360.f) * 360.f;
 
-    if (!reset_zoom) {
+    if (!*reset_zoom) {
         return;
     }
 
@@ -214,11 +215,13 @@ u0 Camera_Home_Internal(u8 reset_zoom) {
 }
 
 u0 Camera_Home_NoResetZoom() {
-    Camera_Home_Internal(false);
+    u8 t = false;
+    Camera_Home_Internal(&t);
 }
 
 u0 Camera_Home_ResetZoom() {
-    Camera_Home_Internal(true);
+    u8 t = true;
+    Camera_Home_Internal(&t);
 }
 
 
@@ -237,13 +240,16 @@ u0 Toggle_Trilinear_Filtering() {
     }
 }
 
-// TODO THIS SUCKS
-u0 Camera_PanX(float x) {
-    ctx.target_camera.target.x += x;
+u0 Camera_PanX(float *x) {
+    ctx.target_camera.target.x += *x / ctx.target_camera.zoom;
 }
 
-u0 Camera_PanY(float y) {
-    ctx.target_camera.target.y += y;
+u0 Camera_PanY(float *y) {
+    ctx.target_camera.target.y += *y / ctx.target_camera.zoom;
+}
+
+u0 Window_Toggle_Maximized() {
+    settings.maximized = !settings.maximized;
 }
 
 u0 Camera_PanMouse() {
@@ -340,6 +346,12 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
             op_duplicate = 7;
 
     switch (uMsg) {
+        case WM_SIZE : {
+            if (wParam == SIZE_MAXIMIZED) settings.maximized = 1;
+            else if (wParam == SIZE_RESTORED) settings.maximized = 0;
+
+            break;
+        }
         case WM_CONTEXTMENU: {
             // Check if the right-click is on the title bar
             if ((HWND) wParam == hwnd) {
@@ -400,7 +412,8 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
                 // Show the context menu
                 POINT pt;
                 GetCursorPos(&pt);
-                i32 result = TrackPopupMenu(hMenu, TPM_CENTERALIGN | TPM_HORPOSANIMATION | TPM_RETURNCMD, pt.x, pt.y, 0,
+                i32 result = TrackPopupMenu(hMenu, TPM_CENTERALIGN | TPM_HORPOSANIMATION | TPM_RETURNCMD, pt.x,
+                                            pt.y, 0,
                                             hwnd, NULL);
 
 
@@ -434,6 +447,8 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
             } else if (word == op_undecorate) {
                 // Undecorate
                 settings.undecorated = !settings.undecorated;
+                settings.undecorated ? SetWindowState(FLAG_WINDOW_UNDECORATED) : ClearWindowState(
+                        FLAG_WINDOW_UNDECORATED);
             } else if (word == op_focus) {
                 Camera_Home_ResetZoom();
             } else if (word == op_properties) {
