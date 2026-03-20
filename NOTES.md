@@ -4,6 +4,7 @@ Functions placed in the PyMethodDef array cannot return void, instead they must
 return a `PyObject*`, for a void function, return a `PyTuple_New(0)`
 
 ### TODO:
+- Pass rotation to shaders, fix grid shader
 - Dispatch decode based on image metadata not extension
 - Add support for reloading from json in program runtime
 - ImGui : 

@@ -155,7 +155,7 @@ u0 Shader_Toggle(char *str) {
 u0 Camera_ZoomAmt(f32 *amount) {
     // Calculate the exponential scale factor
     // You may need to tweak settings.zoom_speed slightly since the math changed
-    f32 scale_factor = expf(*amount * SHIFT_FINE * settings.zoom_speed);
+    f32 scale_factor = expf(*amount * settings.zoom_speed);
 
     // Apply multiplicative zoom
     ctx.target_camera.zoom *= scale_factor;

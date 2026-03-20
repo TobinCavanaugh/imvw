@@ -3,7 +3,7 @@
     "padding": 10.0,
     "on_top": false,
     "undecorated": false,
-    "rotation_speed": 920.0,
+    "rotation_speed": 1.0,
     "python_scripting": true,
     "zoom_speed": 2.0,
     "lerpSpeed_pan": 30.0,
