@@ -61,15 +61,14 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
             cJSON *item = cJSON_GetArrayItem(shaders_array, i);
             custom_shader_t *s = (custom_shader_t *) malloc(sizeof(custom_shader_t));
 
-            // Map JSON "path" to "fs_path" (as per your JSON structure)
+            // TODO rewrite this
             char *path = cJSON_GetStringValue(cJSON_GetObjectItem(item, "path"));
             s->fs_path = path ? strdup(path) : NULL;
             s->vs_path = NULL; // Default to NULL if not provided in JSON
 
             s->enabled = cJSON_IsTrue(cJSON_GetObjectItem(item, "enabled"));
 
-            // Name handling (Note: your struct uses 'char name', which only holds 1 character)
-            s->name = cJSON_GetStringValue(cJSON_GetObjectItem(item, "name"));
+            s->name = strdup(cJSON_GetStringValue(cJSON_GetObjectItem(item, "name")));
 
             out_settings->shaders[i] = s;
         }

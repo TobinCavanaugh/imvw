@@ -82,42 +82,69 @@ u8 AnyModifierDown() {
 void *thread_playerinput(void *arg) {
     prev_ctx = ctx;
     ctx.one = 1;
+
+    // We need a way to track which keys we've already polled this iteration
+    // Since GLFW/Raylib key constants go up to ~348, a fixed array is fine.
+    u8 pressed_cache[512] = {0};
+    u8 down_cache[512] = {0};
+
     while (1) {
         f128 frame_start = getTimeHD_ms();
-        {
-            for (i32 i = 0; i < actions_count; i++) {
-                key_action_t a = actions_array[i];
-                u8 happened = 0;
 
-                u8 modifier_match = false;
+        // Zero out the cache for this loop iteration
+        memset(pressed_cache, 0, sizeof(pressed_cache));
+        memset(down_cache, 0, sizeof(down_cache));
 
-                if (a.modifier == KEY_ANY) {
-                    modifier_match = true;
-                } else if (a.modifier != KEY_NULL) {
-                    modifier_match = IsKeyDown(a.modifier);
-                } else {
-                    modifier_match = !AnyModifierDown();
-                }
+        for (i32 i = 0; i < actions_count; i++) {
+            key_action_t a = actions_array[i];
+            u8 happened = 0;
 
-                happened += (a.press != KEY_NULL && IsKeyPressed(a.press) && modifier_match);
-                happened += (a.hold != KEY_NULL && IsKeyDown(a.hold) && modifier_match);
-                happened += (a.priv_use_mouse && IsMouseButtonDown(a.button) && modifier_match);
+            u8 modifier_match = false;
+            if (a.modifier == KEY_ANY) {
+                modifier_match = true;
+            } else if (a.modifier != KEY_NULL) {
+                modifier_match = IsKeyDown(a.modifier);
+            } else {
+                modifier_match = !AnyModifierDown();
+            }
 
-                if (!happened) continue;
-
-                flut_func_t fft;
-                if (flut_get(a.func, &fft)) {
-                    if (a.arg_type == ARG_TYPE_NONE) {
-                        fft.func(NULL);
-                    } else {
-                        if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
-                        else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
-                        else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
-                        else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
+            if (modifier_match) {
+                // Cache the KeyPress and KeyDown state so subsequent actions
+                // on the same key don't miss the event.
+                if (a.press != KEY_NULL) {
+                    if (pressed_cache[a.press] == 0) {
+                        // We haven't checked this key yet this loop
+                        pressed_cache[a.press] = IsKeyPressed(a.press) ? 2 : 1;
                     }
-                } else {
-                    fprintf(stderr, "Could not find function of name `%s`\n", a.func);
+                    if (pressed_cache[a.press] == 2) happened = 1;
                 }
+
+                if (a.hold != KEY_NULL) {
+                    if (down_cache[a.hold] == 0) {
+                        down_cache[a.hold] = IsKeyDown(a.hold) ? 2 : 1;
+                    }
+                    if (down_cache[a.hold] == 2) happened = 1;
+                }
+
+                if (a.priv_use_mouse && IsMouseButtonDown(a.button)) {
+                    happened = 1;
+                }
+            }
+
+            if (!happened) continue;
+
+            flut_func_t fft;
+            if (flut_get(a.func, &fft)) {
+                if (a.arg_type == ARG_TYPE_NONE) {
+                    fft.func(NULL);
+                } else {
+                    if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
+                    else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
+                    else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
+                    else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
+                }
+            } else {
+                fprintf(stderr, "Could not find function of name `%s`\n", a.func);
             }
         }
 
@@ -133,6 +160,7 @@ void *thread_playerinput(void *arg) {
         f128 total_elapsed = getTimeHD_ms() - frame_start;
         ctx.frame_time = (f32) (total_elapsed / 1000.0);
     }
+
     return NULL;
 }
 
@@ -170,6 +198,7 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
     return font_size;
 }
 
+// TODO defer this
 void load_custom_shaders() {
     // 1. Cleanup existing shaders and memory
     if (ctx.shaders_loaded_arr != NULL) {
@@ -180,6 +209,13 @@ void load_custom_shaders() {
         }
         free(ctx.shaders_loaded_arr);
         ctx.shaders_loaded_arr = NULL;
+    }
+
+    for (i32 i = 0; i < ctx.shaders_count; i++) {
+        custom_shader_t t = ctx.shaders_custom_arr[i];
+        free(t.name);
+        if (t.vs_path) free(t.vs_path);
+        if (t.fs_path) free(t.fs_path);
     }
 
     if (ctx.shaders_custom_arr != NULL) {
@@ -238,6 +274,8 @@ void load_custom_shaders() {
 }
 
 u0 load_all() {
+    imvw_init_loaders();
+
     char *settings_path = ASSETS_PATH"imvw.json";
     FILE *file = fopen(settings_path, "rb");
     if (!file) {
@@ -253,7 +291,6 @@ u0 load_all() {
     fread(json_text, 1, size, file);
     json_text[size] = '\0';
     fclose(file);
-
 
     cJSON *json_data = cJSON_Parse(json_text);
     if (json_data == NULL) {
@@ -273,11 +310,19 @@ u0 load_all() {
     cJSON_Delete(json_data);
     free(json_text);
 
-    imvw_font_load();
+
+//    pthread_t thr;
+//    pthread_create(&thr, NULL, (void *(*)(void *)) imvw_font_load, NULL);
+    imvw_font_load(); // todo maybe defer loading of font file?
+
+
+//    pthread_t thr;
+//    pthread_create(&thr, NULL, (void *(*)(void *)) load_custom_shaders, NULL);
     load_custom_shaders();
 }
 
 i32 main(i32 argc, char **argv) {
+    i64 start_time = timeGetTime();
     HWND v = GetConsoleWindow();
     ShowWindow(v, SW_HIDE);
 
@@ -288,7 +333,6 @@ i32 main(i32 argc, char **argv) {
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    i64 start_time = timeGetTime();
 
     SetExitKey(KEY_NULL);
     SetTraceLogLevel(LOG_WARNING);

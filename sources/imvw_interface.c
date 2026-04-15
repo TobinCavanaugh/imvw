@@ -76,31 +76,16 @@ u0 Camera_FitWindow() {
 }
 
 u0 Load(char *path) {
+
+    // TODO FIX THIS
     strcpy(ctx.current_path, path);
     strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
-    i32 wid = 0, hei = 0, channels = 0;
-
-    // Try to get info natively first
-    if (!stbi_info(path, &wid, &hei, &channels)) {
-        // If native info fails, provide temporary dimensions so the window
-        // doesn't vanish/glitch before the async thread finishes.
-        wid = 1;
-        hei = 1;
-        channels = 3;
-        printf("\nFAILED TO LOAD IMAGE INFO AT %s\n", path);
-    }
-//    if (FileExists(path)) {
-//        ctx.tex_need_load = 1;
-//        ctx.current_tex.width = 1;
-//        ctx.current_tex.height = 1;
-//        ctx.tex_channels = 1;
-//    }
-
-    ctx.current_tex.width = wid;
-    ctx.current_tex.height = hei;
-    ctx.tex_channels = channels;
+    ctx.tex_need_load = 1;
+    ctx.current_tex.width = 1;
+    ctx.current_tex.height = 1;
+    ctx.tex_channels = 1;
 
     struct _stat info;
     ctx.tex_fsize = (_stat(ctx.current_path, &info) == 0) ? info.st_size : 0;
@@ -149,6 +134,7 @@ u0 Shader_Toggle(char *str) {
     for (i32 i = 0; i < ctx.shaders_count; i++) {
         custom_shader_t *t = &ctx.shaders_custom_arr[i];
         if (strcmp(str, t->name) == 0) t->enabled = !t->enabled;
+//        printf("\t- %d %s\n", t->enabled, t->name);
     }
 }
 
@@ -269,18 +255,31 @@ u0 Camera_PanMouse() {
 }
 
 u0 Open_File_Dialog() {
-    char const *lFilterPatterns[] = {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.psd", "*.webp", "*.bmp", "*.pnm",
-                                     "*.hdr", "*.gif", "*.tga"};
+    char const *lFilterPatterns[] = {
+            "*.png", "*.jpg", "*.jpeg", "jfif", "*.tif", "*.tiff",
+            "*.psd", "*.webp", "*.bmp", "*.pnm", "*.hdr", "*.gif",
+            "*.tga", "*.ico"
+    };
+    int numFilters = sizeof(lFilterPatterns) / sizeof(lFilterPatterns[0]);
+
+    char description[512] = "Image Files (";
+    for (int i = 0; i < numFilters; i++) {
+        strcat(description, lFilterPatterns[i]);
+        if (i < numFilters - 1) {
+            strcat(description, "; ");
+        }
+    }
+    strcat(description, ")");
+
     char *out = tinyfd_openFileDialog(
             "Select an image file",
             NULL,
-            3,
+            numFilters,
             lFilterPatterns,
-            "Image Files",
+            description,
             0);
 
-    printf("[[%s]]", out);
-    if (out != NULL && strlen(out) > 0) {
+    if (out && strlen(out) > 0) {
         Load(out);
         Camera_Home_ResetZoom();
     }
