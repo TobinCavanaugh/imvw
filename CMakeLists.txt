@@ -39,8 +39,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinyexr)
 
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(raylib)
 
 set(WebP_USE_STATIC_LIBS ON)
 set(TIFF_USE_STATIC_LIBS ON)
@@ -74,6 +72,10 @@ set(Python_INCLUDE_DIRS "${python_runtime_SOURCE_DIR}")
 set(Python_LIBRARIES "${python_runtime_SOURCE_DIR}/python313.lib")
 
 include_directories(${Python_INCLUDE_DIRS})
+
+set(PLATFORM "Desktop" CACHE STRING "Target platform" FORCE)
+set(PLATFORM_DESKTOP_BACKEND "WIN32" CACHE STRING "Platform backend" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(raylib)
 

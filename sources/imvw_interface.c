@@ -71,7 +71,9 @@ u8 IsDockedToMonitor(HWND hWnd) {
 u0 Camera_FitWindow() {
     if (!IsWindowMaximized() && !IsDockedToMonitor((HWND) GetWindowHandle())) {
         v2f size = CalculateWindowSize();
-        SetWindowSize((i32) size.x, (i32) size.y);
+        if (GetScreenWidth() != (i32)size.x || GetScreenHeight() != (i32)size.y) {
+            SetWindowSize((i32) size.x, (i32) size.y);
+        }
     }
 }
 
@@ -83,14 +85,23 @@ u0 Load(char *path) {
     strcat(ctx.current_window_title, ctx.current_path);
 
     ctx.tex_need_load = 1;
-    ctx.current_tex.width = 1;
-    ctx.current_tex.height = 1;
-    ctx.tex_channels = 1;
+
+    // Use metadata for initial dimensions if possible to avoid window flickering
+    int w, h, c;
+    if (stbi_info(path, &w, &h, &c)) {
+        ctx.current_tex.width = w;
+        ctx.current_tex.height = h;
+        ctx.tex_channels = c;
+    } else {
+        ctx.current_tex.width = 1;
+        ctx.current_tex.height = 1;
+        ctx.tex_channels = 1;
+    }
 
     struct _stat info;
     ctx.tex_fsize = (_stat(ctx.current_path, &info) == 0) ? info.st_size : 0;
 
-    // Fit window based on initial (possibly placeholder) dimensions
+    // Fit window based on initial dimensions
     Camera_FitWindow();
 
     // Trigger the background thread in tex_loader.h
@@ -255,6 +266,7 @@ u0 Camera_PanMouse() {
 }
 
 u0 Open_File_Dialog() {
+    // TODO: Putting this in the json might be reasonable...
     char const *lFilterPatterns[] = {
             "*.png", "*.jpg", "*.jpeg", "jfif", "*.tif", "*.tiff",
             "*.psd", "*.webp", "*.bmp", "*.pnm", "*.hdr", "*.gif",

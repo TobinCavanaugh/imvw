@@ -211,14 +211,13 @@ void load_custom_shaders() {
         ctx.shaders_loaded_arr = NULL;
     }
 
-    for (i32 i = 0; i < ctx.shaders_count; i++) {
-        custom_shader_t t = ctx.shaders_custom_arr[i];
-        free(t.name);
-        if (t.vs_path) free(t.vs_path);
-        if (t.fs_path) free(t.fs_path);
-    }
-
     if (ctx.shaders_custom_arr != NULL) {
+        for (i32 i = 0; i < ctx.shaders_count; i++) {
+            custom_shader_t t = ctx.shaders_custom_arr[i];
+            free(t.name);
+            if (t.vs_path) free(t.vs_path);
+            if (t.fs_path) free(t.fs_path);
+        }
         free(ctx.shaders_custom_arr);
         ctx.shaders_custom_arr = NULL;
     }
@@ -237,109 +236,209 @@ void load_custom_shaders() {
         return;
     }
 
-    // 4. Load shaders from paths
+    // 4. Load shaders from memory buffers if available
     for (i32 i = 0; i < settings.shader_count; i++) {
         custom_shader_t *s = settings.shaders[i];
-
-        // Copy metadata to context for UI/Toggle access
         ctx.shaders_custom_arr[i] = *s;
 
-        if (s->fs_path) {
-            char full_vs_path[PATH_MAX];
-            char full_fs_path[PATH_MAX];
+        if (ctx.shader_fs_sources && ctx.shader_fs_sources[i]) {
+            ctx.shaders_loaded_arr[ctx.shaders_count] = LoadShaderFromMemory(
+                    (ctx.shader_vs_sources ? ctx.shader_vs_sources[i] : NULL),
+                    ctx.shader_fs_sources[i]
+            );
 
-            // Construct paths; allow for NULL vertex shader (Raylib default)
-            const char *vs = NULL;
-            if (s->vs_path && strlen(s->vs_path) > 0) {
-                snprintf(full_vs_path, sizeof(full_vs_path), "%s%s", ASSETS_PATH, s->vs_path);
-                vs = full_vs_path;
-            }
-            snprintf(full_fs_path, sizeof(full_fs_path), "%s%s", ASSETS_PATH, s->fs_path);
-
-            if (FileExists(full_fs_path)) {
-                ctx.shaders_loaded_arr[ctx.shaders_count] = LoadShader(vs, full_fs_path);
-
-                // Verify the shader compiled correctly
-                if (ctx.shaders_loaded_arr[ctx.shaders_count].id != 0) {
-                    printf("IMVW|LOG: Loaded custom shader [%d]: %s\n", ctx.shaders_count, s->name);
-                    ctx.shaders_count++;
-                } else {
-                    fprintf(stderr, "IMVW|ERR: Shader compilation failed: %s\n", full_fs_path);
-                }
+            if (ctx.shaders_loaded_arr[ctx.shaders_count].id != 0) {
+                printf("IMVW|LOG: Loaded custom shader [%d]: %s (from memory)\n", ctx.shaders_count, s->name);
+                ctx.shaders_count++;
             } else {
-                fprintf(stderr, "IMVW|ERR: Shader file missing: %s\n", full_fs_path);
+                fprintf(stderr, "IMVW|ERR: Shader compilation failed from memory: %s\n", s->name);
             }
         }
     }
 }
 
-u0 load_all() {
+static f128 last_timestamp = 0;
+
+void log_step(const char *name) {
+    f128 current = getTimeHD_ms();
+    printf("IMVW|PROF: %-30s | %8.2Lf ms\n", name, current - last_timestamp);
+    last_timestamp = current;
+}
+
+typedef struct {
+    int argc;
+    char **argv;
+    int target_w;
+    int target_h;
+    volatile int config_ready;
+    volatile int size_ready;
+} loader_data_t;
+
+static char *load_file_text(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (!file) return NULL;
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *text = (char *) malloc(size + 1);
+    fread(text, 1, size, file);
+    text[size] = '\0';
+    fclose(file);
+    return text;
+}
+
+void *async_loader(void *arg) {
+    loader_data_t *ld = (loader_data_t *) arg;
+
     imvw_init_loaders();
 
-    char *settings_path = ASSETS_PATH"imvw.json";
-    FILE *file = fopen(settings_path, "rb");
-    if (!file) {
-        fprintf(stderr, "Settings file `imvw.json` not found.\n");
-        return;
+    char *json_text = load_file_text(ASSETS_PATH"imvw.json");
+    cJSON *json_data = json_text ? cJSON_Parse(json_text) : NULL;
+    if (json_text) free(json_text);
+
+    if (json_data) {
+        load_actions(json_data, &actions_array, &actions_count);
+        load_settings(json_data, &settings);
+        if (settings.python_scripting) {
+            Enable_Python();
+            load_python(json_data, &python_scripts_array, &python_scripts_count);
+        }
+
+        // Pre-load shaders into memory
+        if (settings.shader_count > 0) {
+            ctx.shader_fs_sources = (char **) calloc(settings.shader_count, sizeof(char *));
+            ctx.shader_vs_sources = (char **) calloc(settings.shader_count, sizeof(char *));
+            for (int i = 0; i < settings.shader_count; i++) {
+                char full_path[PATH_MAX];
+                if (settings.shaders[i]->fs_path) {
+                    snprintf(full_path, sizeof(full_path), "%s%s", ASSETS_PATH, settings.shaders[i]->fs_path);
+                    ctx.shader_fs_sources[i] = load_file_text(full_path);
+                }
+                if (settings.shaders[i]->vs_path) {
+                    snprintf(full_path, sizeof(full_path), "%s%s", ASSETS_PATH, settings.shaders[i]->vs_path);
+                    ctx.shader_vs_sources[i] = load_file_text(full_path);
+                }
+            }
+        }
+
+        // Pre-load font into memory
+        char *font_path = settings.program_font_path;
+        if (!font_path || !strlen(font_path)) font_path = "C:\\Windows\\Fonts\\segoeui.ttf";
+        FILE *f = fopen(font_path, "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            ctx.font_data_size = (int) ftell(f);
+            fseek(f, 0, SEEK_SET);
+            ctx.font_data = (u8 *) malloc(ctx.font_data_size);
+            fread(ctx.font_data, 1, ctx.font_data_size, f);
+            fclose(f);
+        }
+
+        cJSON_Delete(json_data);
     }
 
-    fseek(file, 0, SEEK_END);
-    u64 size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    ld->config_ready = 1;
 
-    char *json_text = (char *) malloc(size + 1);
-    fread(json_text, 1, size, file);
-    json_text[size] = '\0';
-    fclose(file);
-
-    cJSON *json_data = cJSON_Parse(json_text);
-    if (json_data == NULL) {
-        fprintf(stderr, "Failed to parse `imvw.json`.\n");
-        free(json_text);
-        return;
+    // Determine initial image path to get dimensions
+    char initial_path[MAX_PATH] = {0};
+    if (ld->argc > 1) {
+        for (int i = 1; i < ld->argc; i++) strcat(initial_path, ld->argv[i]);
+    } else {
+        strcpy(initial_path, ASSETS_PATH "test2.png");
     }
 
-    load_actions(json_data, &actions_array, &actions_count);
-    load_settings(json_data, &settings);
+    int img_w, img_h, img_c;
+    if (stbi_info(initial_path, &img_w, &img_h, &img_c)) {
+        // Calculate aspect ratio and window size
+        f32 aspect = (f32) img_w / (f32) img_h;
+        f32 sw = settings.max_window_w;
+        f32 sh = settings.max_window_h;
+        f32 mw = settings.min_window_w;
+        f32 mh = settings.min_window_h;
 
-    if (settings.python_scripting) {
-        Enable_Python();
-        load_python(json_data, &python_scripts_array, &python_scripts_count);
+        f32 target_w = (f32) img_w;
+        f32 target_h = (f32) img_h;
+
+        if (target_w >= sw || target_h >= sh) {
+            if (target_w >= target_h) {
+                target_w = sw;
+                target_h = sw / aspect;
+            } else {
+                target_h = sh;
+                target_w = sh * aspect;
+            }
+        }
+        if (target_w <= mw || target_h <= mh) {
+            if (target_w >= target_h) {
+                target_w = mw;
+                target_h = mw / aspect;
+            } else {
+                target_h = mh;
+                target_w = mh * aspect;
+            }
+        }
+        ld->target_w = (int) target_w;
+        ld->target_h = (int) target_h;
+    } else {
+        ld->target_w = SCREEN_WIDTH;
+        ld->target_h = SCREEN_HEIGHT;
     }
+    ld->size_ready = 1;
 
-    cJSON_Delete(json_data);
-    free(json_text);
+    return NULL;
+}
 
-
-//    pthread_t thr;
-//    pthread_create(&thr, NULL, (void *(*)(void *)) imvw_font_load, NULL);
-    imvw_font_load(); // todo maybe defer loading of font file?
-
-
-//    pthread_t thr;
-//    pthread_create(&thr, NULL, (void *(*)(void *)) load_custom_shaders, NULL);
-    load_custom_shaders();
+void *python_startup_thread(void *arg) {
+    python_run_script_func(python_scripts_array, python_scripts_count, "start");
+    return NULL;
 }
 
 i32 main(i32 argc, char **argv) {
-    i64 start_time = timeGetTime();
-    HWND v = GetConsoleWindow();
-    ShowWindow(v, SW_HIDE);
+    // Enable precision timers on Windows to make Sleep(1) actually 1ms
+    timeBeginPeriod(1);
+
+    f128 overall_start = getTimeHD_ms();
+    last_timestamp = overall_start;
+
+    ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+    loader_data_t ld = {argc, argv, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0};
+    pthread_t loader_thr;
+    pthread_create(&loader_thr, NULL, async_loader, &ld);
+
+    // Initialize GLFW explicitly to overlap with async_loader
+    if (!glfwInit()) {
+        fprintf(stderr, "Failed to initialize GLFW\n");
+        return -1;
+    }
+    log_step("glfwInit");
+
+    // Disable joystick to prevent 300ms delays on Windows
+    glfwInitHint(GLFW_JOYSTICK_HAT_BUTTONS, GLFW_FALSE);
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_SAMPLES, 4);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    log_step("GLFW Hints");
 
+    // Wait briefly for size metadata, but don't hang if it's slow
+    int timeout = 100; // ms
+    while (!ld.size_ready && timeout-- > 0) Sleep(1);
 
     SetExitKey(KEY_NULL);
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
+    InitWindow(ld.target_w, ld.target_h, WINDOW_TITLE);
+    log_step("InitWindow");
 
-    load_all();
+    pthread_join(loader_thr, NULL);
+    log_step("loader_thread join");
+
+    imvw_font_load();
+    log_step("  imvw_font_load");
+    load_custom_shaders();
+    log_step("  load_custom_shaders");
 
     ctx.main_window = glfwGetCurrentContext();
     SetTargetFPS(settings.target_fps);
@@ -368,6 +467,7 @@ i32 main(i32 argc, char **argv) {
     flut_add(Shader_Toggle);
     flut_add(printf);
     flut_add(Window_Toggle_Maximized);
+    log_step("flut_add registrations");
 
     ctx.target_camera = ctx.real_camera;
 
@@ -381,6 +481,7 @@ i32 main(i32 argc, char **argv) {
         SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM) hIcon);
         SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM) hIcon);
     }
+    log_step("Icon Load");
 
     if (argc > 1) {
         char argv_path[MAX_PATH] = {0};
@@ -389,17 +490,22 @@ i32 main(i32 argc, char **argv) {
     } else {
         Load(ASSETS_PATH "test2.png");
     }
+    log_step("Initial Load (Load call)");
 
     Camera_Home_ResetZoom();
 
     if (settings.python_scripting) {
-        python_run_script_func(python_scripts_array, python_scripts_count, "start");
+        pthread_t py_thr;
+        pthread_create(&py_thr, NULL, python_startup_thread, NULL);
+        pthread_detach(py_thr);
+        log_step("Python Startup Script (Threaded)");
     }
 
     pthread_t pt;
     pthread_create(&pt, NULL, (thread_playerinput), NULL);
+    log_step("Input Thread Create");
 
-    printf("IMVW|LOG: startup_time_ms:%lld\n", timeGetTime() - start_time);
+    printf("IMVW|LOG: total_startup_time_ms: %.2Lf\n", getTimeHD_ms() - overall_start);
 
     while (!WindowShouldClose()) {
         if (settings.python_scripting) {

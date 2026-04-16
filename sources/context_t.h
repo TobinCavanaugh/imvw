@@ -53,6 +53,11 @@ typedef struct {
 
     Font current_font;
 
+    char **shader_fs_sources;
+    char **shader_vs_sources;
+    u8 *font_data;
+    i32 font_data_size;
+
     i64 default_wind_proc;
     GLFWwindow *main_window;
 
