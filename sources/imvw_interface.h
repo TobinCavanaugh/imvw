@@ -69,7 +69,7 @@ u0 Copy_To_Clipboard();
 
 // LRESULT CALLBACK NewWindowProc(HWND hwnd, uint32_t uMsg, uint32_t* wParam, int64_t lParam);
 
-LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam);
+LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 u0 Edit_Settings_Json();
 

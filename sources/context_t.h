@@ -5,23 +5,19 @@
 #ifndef CONTEXT_T_H
 #define CONTEXT_T_H
 
- #include <raylib.h>
+// raylib replaced by tr_raylib.h (included via dialect.h)
 #include "dialect.h"
-#include <pthread.h>
-#include "GLFW/glfw3.h"
+#include "pthread_win32.h"
+// GLFW removed (tr_raylib uses Win32)
 #include "settings.h"
 
 #define _Atomic
+#ifndef _MSC_VER
 #include <stdatomic.h>
+#endif
 
 #include <math.h>
 #include <string.h>
-
-// #ifdef _WIN64
-// typedef __int64 LONG_PTR;
-// #else
-//     typedef long LONG_PTR;
-// #endif
 
 typedef struct {
     i32 one;
@@ -58,10 +54,11 @@ typedef struct {
     u8 *font_data;
     i32 font_data_size;
 
-    i64 default_wind_proc;
-    GLFWwindow *main_window;
+    WNDPROC default_wind_proc;
+    void *main_window;  // was GLFWwindow* — now unused
 
     bool use_alt_bg;
+    _Atomic u8 focused;
 
     char current_path[PATH_MAX];
     char current_window_title[PATH_MAX];
@@ -101,32 +98,21 @@ static u8 context_equals(const context_t *a, const context_t *b) {
     // Compare Texture2D structures
     if (memcmp(&a->current_tex, &b->current_tex, sizeof(Texture2D)) != 0) return 0;
 
-    // // Compare u8 fields
     if (a->tex_loading != b->tex_loading) return 0;
     if (a->tex_need_load != b->tex_need_load) return 0;
     if (a->tex_need_filter != b->tex_need_filter) return 0;
     if (a->tex_channels != b->tex_channels) return 0;
     if (a->tex_fsize != b->tex_fsize) return 0;
 
-    // Compare v2f structures
     if (memcmp(&a->mouse_pos, &b->mouse_pos, sizeof(v2f)) != 0) return 0;
     if (memcmp(&a->mouse_delta, &b->mouse_delta, sizeof(v2f)) != 0) return 0;
 
-    // Compare Camera2D structures
     if (memcmp(&a->real_camera, &b->real_camera, sizeof(Camera2D)) != 0) return 0;
     if (memcmp(&a->target_camera, &b->target_camera, sizeof(Camera2D)) != 0) return 0;
-    //
-    // // Compare Font structures
-    // if (memcmp(&a->current_font, &b->current_font, sizeof(Font)) != 0) return 0;
-    //
-    // // Compare LONG_PTR fields
-    // if (a->default_wind_proc != b->default_wind_proc) return 0;
-    //
-    // Compare string fields
+
     if (strcmp(a->current_path, b->current_path) != 0) return 0;
     if (strcmp(a->current_window_title, b->current_window_title) != 0) return 0;
 
-    // If all checks passed, the contexts are equal
     return 1;
 }
 

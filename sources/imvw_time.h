@@ -9,5 +9,6 @@
 
 f128 getTimeHD_ms();
 
-u0 sleep_ms(i32 milliseconds) ;
+// sleep_ms is provided by pthread_time.h (included via win_include.h -> pthread_time.h)
+
 #endif //IMVW_TIME_H

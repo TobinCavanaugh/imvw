@@ -4,7 +4,7 @@
     "on_top": false,
     "undecorated": false,
     "rotation_speed": 1.0,
-    "python_scripting": true,
+    "python_scripting": false,
     "zoom_speed": 2.0,
     "lerpSpeed_pan": 30.0,
     "lerpSpeed_zoom": 20.0,
@@ -34,7 +34,7 @@
     {
       "name": "PixelLines",
       "enabled": false,
-      "path": "grid.fs"
+      "path": "grid_ps.hlsl"
     }
   ],
   "scripts": [

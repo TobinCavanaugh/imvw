@@ -18,19 +18,18 @@ static u0 imvw_font_load() {
     if (ctx.font_data) {
         // Reduced from 256 to 32 for much faster rasterization
         rlfont = LoadFontFromMemory(".ttf", ctx.font_data, ctx.font_data_size, 32, NULL, 0);
-        if (rlfont.texture.width) {
+        if (rlfont.handle) {
             printf(LOG_FONT "Loaded font from pre-loaded memory (32px)\n");
         }
     }
 
-    if (!rlfont.texture.width) {
+    if (!rlfont.handle) {
         rlfont = GetFontDefault();
-        printf(LOG_FONT"Loaded Raylib default font\n");
+        printf(LOG_FONT"Loaded tr_raylib default font\n");
     }
 
     ctx.current_font = rlfont;
-    GenTextureMipmaps(&ctx.current_font.texture);
-    SetTextureFilter(ctx.current_font.texture, TEXTURE_FILTER_TRILINEAR);
+    // GenTextureMipmaps + SetTextureFilter are texture-only — not applicable to atlas-based fonts
 }
 
 #endif //FONT_LOADER_H

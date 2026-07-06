@@ -1,51 +1,25 @@
 //
 // Created by tobin on 2025-05-20.
+// Modified for MSVC: QueryPerformanceCounter instead of clock_gettime
 //
-
-// #include "imvw_time.h"
 
 #include "imvw_time.h"
 #include "win_include.h"
 #include "dialect.h"
 #include "imvw_interface.h"
 
+static LARGE_INTEGER g_qpc_freq = {0};
+static int g_qpc_init = 0;
+
 f128 getTimeHD_ms() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000);
-}
-
-u0 sleep_ms(i32 milliseconds) {
-    // Busy waiting for longer than 100ms doesn't make much sense
-    if (milliseconds < 1) {
-    SPIN:
-        f128 start = getTimeHD_ms();
-        while (1) {
-            if (getTimeHD_ms() - start >= milliseconds) {
-                return;
-            }
-        }
-    } else {
-        // Create a waitable timer
-        HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
-
-        // If creating the timer fails, just default to spinning
-        if (timer == NULL) {
-            goto SPIN;
-            return;
-        }
-
-        // Set timer to negative value for relative time
-        LARGE_INTEGER li;
-        li.QuadPart = -1 * (10000LL * milliseconds); // Convert to 100-nanosecond intervals
-
-        // Set the timer
-        if (SetWaitableTimer(timer, &li, 0, NULL, NULL, false)) {
-            // Wait for the timer to expire
-            WaitForSingleObject(timer, INFINITE);
-        }
-
-        // Close the timer handle
-        CloseHandle(timer);
+    if (!g_qpc_init) {
+        QueryPerformanceFrequency(&g_qpc_freq);
+        g_qpc_init = 1;
     }
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    return (f128)(counter.QuadPart * 1000LL) / (f128)g_qpc_freq.QuadPart;
 }
+
+// NOTE: sleep_ms is provided by pthread_time.h (included via win_include.h -> pthread_time.h)
+// Do NOT redefine it here.

@@ -10,6 +10,7 @@
 #define ShowCursor Win32_ShowCursor
 
 #include <windows.h>
+#define PATH_MAX MAX_PATH
 #include <shellapi.h> // For ShellExecute
 #include <shlwapi.h>  // For StrFormatByteSize64
 #include <shlobj.h>   // For SHGetFolderPathA
@@ -29,6 +30,6 @@
 #undef far
 
 
-#include <raylib.h>
+#include "tr_raylib.h"
 
 #endif //IMVW_WIN_INCLUDE_H

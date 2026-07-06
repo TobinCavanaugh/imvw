@@ -1,11 +1,9 @@
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
 
 #include "external/stb_image.h"
 
 #include "win_include.h"
 
-#include <GLFW/glfw3.h>
+// GLFW removed (tr_raylib uses Win32)
 #include <Python.h>
 
 #include "external/cJSON.h"
@@ -13,10 +11,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <external/miniaudio.h>
+#include <trlib.h>
+#include "pthread_win32.h"
+// #include <external/miniaudio.h> // not needed
 
-#include "raymath.h"
+// raymath.h replaced by tr_raylib.h
 #include "dialect.h"
 #include "flut.h"
 #include "external/tinyfiledialogs.h"
@@ -57,9 +56,9 @@ context_t ctx = {
         .current_tex = {0},
         .tex_loading = 0,
         .tex_need_load = 0,
-        .real_camera = (Camera2D) {
-                .offset = (v2f) {0, 0},
-                .target = (v2f) {0, 0},
+        .real_camera = {
+                .offset = {0, 0},
+                .target = {0, 0},
                 .rotation = 0.0f,
                 .zoom = 1.0f
         },
@@ -70,8 +69,6 @@ context_t ctx = {
         .shaders_custom_arr = NULL
 };
 
-context_t prev_ctx;
-
 u8 AnyModifierDown() {
     return IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT) ||
            IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
@@ -79,89 +76,76 @@ u8 AnyModifierDown() {
            IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
 }
 
-void *thread_playerinput(void *arg) {
-    prev_ctx = ctx;
-    ctx.one = 1;
+// Process all registered actions once. Must be called from the main thread
+// (or any thread that also calls BeginDrawing/EndDrawing) because tr_raylib
+// input arrays (g_curr_keys, g_curr_mouse) are updated inside BeginDrawing().
+static void process_actions(void) {
+    // Skip all input processing when the window doesn't have focus —
+    // tr_raylib polls keys via GetAsyncKeyState which ignores focus,
+    // so physically held keys would otherwise register as held even
+    // when our window is in the background.
+    if (!ctx.focused) return;
 
-    // We need a way to track which keys we've already polled this iteration
-    // Since GLFW/Raylib key constants go up to ~348, a fixed array is fine.
-    u8 pressed_cache[512] = {0};
-    u8 down_cache[512] = {0};
+    // We need a way to track which keys we've already polled this iteration.
+    // Since key constants go up to ~348, a fixed array is fine.
+    static u8 pressed_cache[512];
+    static u8 down_cache[512];
 
-    while (1) {
-        f128 frame_start = getTimeHD_ms();
+    // Zero out the cache for this frame
+    memset(pressed_cache, 0, sizeof(pressed_cache));
+    memset(down_cache, 0, sizeof(down_cache));
 
-        // Zero out the cache for this loop iteration
-        memset(pressed_cache, 0, sizeof(pressed_cache));
-        memset(down_cache, 0, sizeof(down_cache));
+    for (i32 i = 0; i < actions_count; i++) {
+        key_action_t a = actions_array[i];
+        u8 happened = 0;
 
-        for (i32 i = 0; i < actions_count; i++) {
-            key_action_t a = actions_array[i];
-            u8 happened = 0;
+        u8 modifier_match = false;
+        if (a.modifier == KEY_ANY) {
+            modifier_match = true;
+        } else if (a.modifier != KEY_NULL) {
+            modifier_match = IsKeyDown(a.modifier);
+        } else {
+            modifier_match = !AnyModifierDown();
+        }
 
-            u8 modifier_match = false;
-            if (a.modifier == KEY_ANY) {
-                modifier_match = true;
-            } else if (a.modifier != KEY_NULL) {
-                modifier_match = IsKeyDown(a.modifier);
-            } else {
-                modifier_match = !AnyModifierDown();
+        if (modifier_match) {
+            // Cache the KeyPress and KeyDown state so subsequent actions
+            // on the same key don't miss the event.
+            if (a.press != KEY_NULL) {
+                if (pressed_cache[a.press] == 0) {
+                    pressed_cache[a.press] = IsKeyPressed(a.press) ? 2 : 1;
+                }
+                if (pressed_cache[a.press] == 2) happened = 1;
             }
 
-            if (modifier_match) {
-                // Cache the KeyPress and KeyDown state so subsequent actions
-                // on the same key don't miss the event.
-                if (a.press != KEY_NULL) {
-                    if (pressed_cache[a.press] == 0) {
-                        // We haven't checked this key yet this loop
-                        pressed_cache[a.press] = IsKeyPressed(a.press) ? 2 : 1;
-                    }
-                    if (pressed_cache[a.press] == 2) happened = 1;
+            if (a.hold != KEY_NULL) {
+                if (down_cache[a.hold] == 0) {
+                    down_cache[a.hold] = IsKeyDown(a.hold) ? 2 : 1;
                 }
-
-                if (a.hold != KEY_NULL) {
-                    if (down_cache[a.hold] == 0) {
-                        down_cache[a.hold] = IsKeyDown(a.hold) ? 2 : 1;
-                    }
-                    if (down_cache[a.hold] == 2) happened = 1;
-                }
-
-                if (a.priv_use_mouse && IsMouseButtonDown(a.button)) {
-                    happened = 1;
-                }
+                if (down_cache[a.hold] == 2) happened = 1;
             }
 
-            if (!happened) continue;
-
-            flut_func_t fft;
-            if (flut_get(a.func, &fft)) {
-                if (a.arg_type == ARG_TYPE_NONE) {
-                    fft.func(NULL);
-                } else {
-                    if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
-                    else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
-                    else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
-                    else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
-                }
-            } else {
-                fprintf(stderr, "Could not find function of name `%s`\n", a.func);
+            if (a.priv_use_mouse && IsMouseButtonDown(a.button)) {
+                happened = 1;
             }
         }
 
-        f128 frame_end = getTimeHD_ms();
-        f128 elapsed = frame_end - frame_start;
-        f32 target_frametime_ms = 16.67f;
-        f32 sleeptime = target_frametime_ms - (f32) elapsed;
+        if (!happened) continue;
 
-        if (sleeptime > 0) {
-            sleep_ms(I32(sleeptime));
+        flut_func_t fft;
+        if (flut_get(a.func, &fft)) {
+            if (a.arg_type == ARG_TYPE_NONE) {
+                fft.func(NULL);
+            } else {
+                if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
+                else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
+                else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
+                else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
+            }
+        } else {
+            fprintf(stderr, "Could not find function of name `%s`\n", a.func);
         }
-
-        f128 total_elapsed = getTimeHD_ms() - frame_start;
-        ctx.frame_time = (f32) (total_elapsed / 1000.0);
     }
-
-    return NULL;
 }
 
 f32 get_system_font_size() {
@@ -388,14 +372,21 @@ void *async_loader(void *arg) {
     return NULL;
 }
 
-void *python_startup_thread(void *arg) {
-    python_run_script_func(python_scripts_array, python_scripts_count, "start");
-    return NULL;
-}
-
 i32 main(i32 argc, char **argv) {
     // Enable precision timers on Windows to make Sleep(1) actually 1ms
     timeBeginPeriod(1);
+
+    // Disable OS window ghosting to prevent false-positive "Not Responding" states
+    {
+        HMODULE hUser32 = GetModuleHandleA("user32.dll");
+        if (hUser32) {
+            typedef void (WINAPI *DisableGhosting_t)(void);
+            DisableGhosting_t pDisableGhosting = (DisableGhosting_t)GetProcAddress(hUser32, "DisableProcessWindowsGhosting");
+            if (pDisableGhosting) {
+                pDisableGhosting();
+            }
+        }
+    }
 
     f128 overall_start = getTimeHD_ms();
     last_timestamp = overall_start;
@@ -406,21 +397,7 @@ i32 main(i32 argc, char **argv) {
     pthread_t loader_thr;
     pthread_create(&loader_thr, NULL, async_loader, &ld);
 
-    // Initialize GLFW explicitly to overlap with async_loader
-    if (!glfwInit()) {
-        fprintf(stderr, "Failed to initialize GLFW\n");
-        return -1;
-    }
-    log_step("glfwInit");
-
-    // Disable joystick to prevent 300ms delays on Windows
-    glfwInitHint(GLFW_JOYSTICK_HAT_BUTTONS, GLFW_FALSE);
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
-    log_step("GLFW Hints");
+    // Wait for async_loader to determine image dimensions
 
     // Wait briefly for size metadata, but don't hang if it's slow
     int timeout = 100; // ms
@@ -440,7 +417,7 @@ i32 main(i32 argc, char **argv) {
     load_custom_shaders();
     log_step("  load_custom_shaders");
 
-    ctx.main_window = glfwGetCurrentContext();
+    ctx.main_window = GetWindowHandle();
     SetTargetFPS(settings.target_fps);
 
     // Registering functions
@@ -471,8 +448,26 @@ i32 main(i32 argc, char **argv) {
 
     ctx.target_camera = ctx.real_camera;
 
-    ctx.default_wind_proc = GetWindowLongPtr((HWND) GetWindowHandle(), GWLP_WNDPROC);
-    SetWindowLongPtrA((HWND) GetWindowHandle(), GWLP_WNDPROC, (i64) NewWindowProc);
+    ctx.default_wind_proc = (WNDPROC) SetWindowLongPtrA((HWND) GetWindowHandle(), GWLP_WNDPROC, (LONG_PTR) NewWindowProc);
+
+    // Disable IME for this window to prevent focus-loss deadlocks with the OS IME/DWM subsystem
+    {
+        HMODULE hImm = LoadLibraryA("imm32.dll");
+        if (hImm) {
+            typedef BOOL (WINAPI *ImmAssociateContext_t)(HWND, void*);
+            ImmAssociateContext_t pImmAssociateContext = 
+                (ImmAssociateContext_t)GetProcAddress(hImm, "ImmAssociateContext");
+            if (pImmAssociateContext) {
+                pImmAssociateContext((HWND)GetWindowHandle(), NULL);
+            }
+            FreeLibrary(hImm);
+        }
+    }
+
+    // tr_create (inside InitWindow) pumps messages before our subclass is
+    // installed, so WM_SETFOCUS was already consumed by the original proc.
+    // Explicitly query focus state now that the subclass is in place.
+    ctx.focused = (GetForegroundWindow() == (HWND)GetWindowHandle()) ? 1 : 0;
 
     {
         HWND hwnd = (HWND) GetWindowHandle();
@@ -495,19 +490,23 @@ i32 main(i32 argc, char **argv) {
     Camera_Home_ResetZoom();
 
     if (settings.python_scripting) {
-        pthread_t py_thr;
-        pthread_create(&py_thr, NULL, python_startup_thread, NULL);
-        pthread_detach(py_thr);
-        log_step("Python Startup Script (Threaded)");
+        python_run_script_func(python_scripts_array, python_scripts_count, "start");
+        log_step("Python Startup Script");
     }
 
-    pthread_t pt;
-    pthread_create(&pt, NULL, (thread_playerinput), NULL);
-    log_step("Input Thread Create");
+    // Mark the context as initialized (was previously done in the input thread)
+    ctx.one = 1;
 
     printf("IMVW|LOG: total_startup_time_ms: %.2Lf\n", getTimeHD_ms() - overall_start);
 
+    i32 frame_count = 0;
+    f128 loop_entry_ms;
     while (!WindowShouldClose()) {
+        loop_entry_ms = getTimeHD_ms();
+        frame_count++;
+        if (frame_count % 60 == 1) {
+//            fprintf(stderr, "[%.0Lf] IMVW| frame %d begin\n", loop_entry_ms, frame_count);
+        }
         if (settings.python_scripting) {
             python_run_script_func(python_scripts_array, python_scripts_count, "update");
         }
@@ -515,11 +514,10 @@ i32 main(i32 argc, char **argv) {
         ctx.mouse_pos = GetMousePosition();
         ctx.mouse_delta = GetMouseDelta();
 
-
         ctx.window_width = GetRenderWidth();
         ctx.window_height = GetRenderHeight();
 
-        if (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER))) {
+        if (ctx.focused && (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER)))) {
             if (IsWindowMaximized()) {
                 settings.maximized = 0;
                 settings.undecorated = 0;
@@ -546,11 +544,11 @@ i32 main(i32 argc, char **argv) {
             settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
         }
 
-        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+        if (ctx.focused && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
             SendMessage((HWND) GetWindowHandle(), 0x007B /*WM_CONTEXTMENU*/, (WPARAM) GetWindowHandle(), 0);
         }
 
-        if (GetMouseWheelMove() && !ALT_DOWN) {
+        if (ctx.focused && GetMouseWheelMove() && !ALT_DOWN) {
             Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
             ctx.target_camera.offset = GetMousePosition();
             ctx.target_camera.target = mwp;
@@ -573,6 +571,10 @@ i32 main(i32 argc, char **argv) {
         roundCamera2DValues(&ctx.target_camera, 0.001f);
 
         BeginDrawing();
+
+        // ── Action processing (runs after poll_input so key state is current) ──
+        process_actions();
+
         ClearBackground(ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color);
 
         BeginMode2D(ctx.real_camera);
@@ -687,6 +689,16 @@ i32 main(i32 argc, char **argv) {
         EndBlendMode();
 
         EndDrawing();
+
+        // Update frame_time on the main thread (was previously set by the input thread)
+        ctx.frame_time = GetFrameTime();
+
+        if (frame_count % 60 == 1) {
+            f128 elapsed = getTimeHD_ms() - loop_entry_ms;
+//            fprintf(stderr, "[%.0Lf] IMVW| frame %d end (%.2Lf ms)\n", getTimeHD_ms(), frame_count, elapsed);
+        }
+
+        tr_pump_messages(tr_get_state());
     }
 
     CloseWindow();

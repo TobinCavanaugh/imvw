@@ -48,7 +48,7 @@ typedef struct {
     f32 min_window_w;
     f32 min_window_h;
 
-    TextureFilter texture_filter;
+    int texture_filter;
 
     Color bg_color;
     Color bg_color_alt;

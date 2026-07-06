@@ -2,7 +2,16 @@
 .vscode/
 .vs/
 cmake-build-debug/
+cmake-build-debug-mingw/
 bin/
 build/
 out/
 CMakeSettings.json
+internal_docs/
+.cmake_deps/
+
+
+*.bak
+*.bak1
+*.bak2
+*.bak3

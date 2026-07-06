@@ -44,18 +44,26 @@ u0 scripts_add(char *name) {
     }
 
     // Test if file exists
-    if (!FileExists(full_path)) {
-        ERR_PY("Failed to load script `%s` due to file not existing", full_path)
+    char check_path[512];
+    snprintf(check_path, sizeof(check_path), "%s.py", full_path);
+    if (!FileExists(check_path)) {
+        ERR_PY("Failed to load script `%s` due to file not existing", check_path)
         return;
     }
 
-    scripts_array = (PyObject **) realloc(scripts_array, (scripts_count + 1) * sizeof(PyObject *));
-
     PyObject *pyname = PyUnicode_FromString(full_path);
     PyObject *mod = PyImport_Import(pyname);
-    PyModule_AddFunctions(mod, ExposedFunctions);
     Py_DECREF(pyname);
 
+    if (!mod) {
+        PyErr_Print();
+        ERR_PY("Failed to import script `%s` into Python runtime", full_path)
+        return;
+    }
+
+    PyModule_AddFunctions(mod, ExposedFunctions);
+
+    scripts_array = (PyObject **) realloc(scripts_array, (scripts_count + 1) * sizeof(PyObject *));
     scripts_array[scripts_count] = mod;
     ++scripts_count;
 }
@@ -73,14 +81,18 @@ u0 python_run_script_func(char **python_scripts_array, i32 python_scripts_count,
         if (obj == NULL) { continue; }
 
         PyObject *func = PyObject_GetAttrString(obj, func_name);
+        if (!func) {
+            PyErr_Clear();  // Clear AttributeError when function doesn't exist
+            continue;
+        }
         PyObject *rags = PyTuple_New(0);
-        if (func && rags) {
-            PyObject_CallObject(func, rags);
-            // PyObject po * PyErr_GetHandledException();
-
-            Py_DECREF(func);
+        if (rags) {
+            PyObject *res = PyObject_CallObject(func, rags);
+            Py_XDECREF(res);
+            PyErr_Clear();  // Clear any unhandled Python exception
             Py_DECREF(rags);
         }
+        Py_DECREF(func);
     }
 }
 

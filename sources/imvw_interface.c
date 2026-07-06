@@ -4,7 +4,7 @@
 
 #include "imvw_interface.h"
 
-#include <dirent.h>
+#include "dirent_win32.h"
 #include <external/stb_image.h>
 #include <external/tinyfiledialogs.h>
 //#include "image_decoder.h"
@@ -352,15 +352,26 @@ u0 Toggle_Properties() {
 }
 
 // out_settings->infinite_tile = 1;
-LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
+LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     const i32 op_on_top = 1, op_undecorate = 2, op_focus = 3, op_properties = 4, op_filtering = 5, op_open = 6,
             op_duplicate = 7;
 
+//    printf("------- IMVW | PROC | 0x%08x\n", uMsg);
+
     switch (uMsg) {
+        case 0x7f : {
+            return 0;
+        }
         case WM_SIZE : {
             if (wParam == SIZE_MAXIMIZED) settings.maximized = 1;
             else if (wParam == SIZE_RESTORED) settings.maximized = 0;
 
+            // Keep the camera centred when the window is resized
+            i32 new_w = LOWORD(lParam);
+            i32 new_h = HIWORD(lParam);
+            if (new_w > 0 && new_h > 0) {
+                ctx.target_camera.offset = V2f((f32) new_w / 2.0f, (f32) new_h / 2.0f);
+            }
             break;
         }
         case WM_CONTEXTMENU: {
@@ -487,10 +498,29 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, u32 uMsg, i64 wParam, i64 lParam) {
             }
             return 0;
         }
+        case WM_SETFOCUS:{
+            ctx.focused = 1;
+            break;
+        }
+        case WM_KILLFOCUS:{
+            ctx.focused = 0;
+            break;
+        }
+
+        case WM_KEYDOWN:
+        case WM_KEYUP: {
+            break;
+        }
+        case WM_PAINT: {
+            ValidateRect(hwnd, NULL);
+            break;
+        }
+        case WM_MENUCHAR: {
+            // Prevent beep sound when Alt+Key is pressed
+            return (LRESULT)(MNC_CLOSE << 16);
+        }
     }
-    // Call the original window procedure for default processing
-    // return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    return CallWindowProc((WNDPROC) ctx.default_wind_proc, hwnd, uMsg, wParam, lParam);
+    return CallWindowProcA((WNDPROC) ctx.default_wind_proc, hwnd, uMsg, wParam, lParam);
 }
 
 //TODO add a shit load of logging features
