@@ -50,8 +50,11 @@ typedef struct {
 
     int texture_filter;
 
-    Color bg_color;
-    Color bg_color_alt;
+    Color bg_color;                     // default background
+    int bg_color_count;                  // number of named colors
+    #define BG_COLOR_NAME_MAX 64
+    #define MAX_BG_COLORS 16
+    struct { char name[BG_COLOR_NAME_MAX]; Color color; } bg_colors[MAX_BG_COLORS];
 
     f32 ssaa_scale;
 } settings_t;

@@ -67,7 +67,8 @@ context_t ctx = {
         .current_window_title = "",
         .shaders_loaded_arr = NULL,
         .shaders_count = 0,
-        .shaders_custom_arr = NULL
+        .shaders_custom_arr = NULL,
+        .active_bg_color_index = -1
 };
 // Pre-fetch modifier key states once per frame so per-action checks use the
 // cached values instead of calling IsKeyDown (GetAsyncKeyState) repeatedly.
@@ -772,11 +773,15 @@ i32 main(i32 argc, char **argv) {
         // ── Redirect rendering to SSAA offscreen target (1.1× supersampling) ──
         ID3D11DeviceContext    *d3d_ctx = tr_get_context(tr_get_state());
         ID3D11RenderTargetView *d3d_rtv = tr_get_rtv(tr_get_state());
-        Color bg_clear = ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color;
-        if (d3d_ctx && d3d_rtv) ssaa_begin_frame(d3d_ctx, d3d_rtv, bg_clear);
+        Color bg_active = ctx.active_bg_color_index >= 0
+            ? settings.bg_colors[ctx.active_bg_color_index].color
+            : settings.bg_color;
+        if (d3d_ctx && d3d_rtv) ssaa_begin_frame(d3d_ctx, d3d_rtv, bg_active);
         BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
         {
-            Color cb = ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color;
+            Color cb = ctx.active_bg_color_index >= 0
+                ? settings.bg_colors[ctx.active_bg_color_index].color
+                : settings.bg_color;
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), cb);
         }
         EndBlendMode();

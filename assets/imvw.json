@@ -23,11 +23,19 @@
       "b": 0,
       "a": 0
     },
-    "bg_color_alt": {
-      "r": 0,
-      "g": 0,
-      "b": 0,
-      "a": 255
+    "bg_colors": {
+      "black": {
+        "r": 0,
+        "g": 0,
+        "b": 0,
+        "a": 255
+      },
+      "white": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 255
+      }
     },
     "ssaa_scale": 1.5
   },
@@ -130,7 +138,15 @@
     },
     {
       "func": "Toggle_BG_Color",
-      "press": "b"
+      "press": "b",
+      "arg": "black",
+      "modifier": "KEY_NULL"
+    },
+    {
+      "func": "Toggle_BG_Color",
+      "press": "b",
+      "arg": "white",
+      "modifier": "KEY_LEFT_SHIFT"
     },
     {
       "func": "exit",

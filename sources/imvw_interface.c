@@ -124,8 +124,14 @@ u0 Rotate(f32 *amount) {
     ctx.target_camera.rotation += *amount * ctx.frame_time * 125.0f * settings.rotation_speed * SHIFT_FINE;
 }
 
-u0 Toggle_BG_Color() {
-    ctx.use_alt_bg = !ctx.use_alt_bg;
+u0 Toggle_BG_Color(char *name) {
+    if (!name) { ctx.active_bg_color_index = -1; return; }
+    for (int i = 0; i < settings.bg_color_count; i++) {
+        if (strcmp(settings.bg_colors[i].name, name) == 0) {
+            ctx.active_bg_color_index = (ctx.active_bg_color_index == i) ? -1 : i;
+            return;
+        }
+    }
 }
 
 u0 Rotate_By_Scroll() {

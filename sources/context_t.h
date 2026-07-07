@@ -63,7 +63,7 @@ typedef struct {
     WNDPROC default_wind_proc;
     void *main_window;  // was GLFWwindow* — now unused
 
-    bool use_alt_bg;
+    int active_bg_color_index;           // -1 = default, 0+ = index into settings.bg_colors[]
     _Atomic u8 focused;
 
     char current_path[PATH_MAX];

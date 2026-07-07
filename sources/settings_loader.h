@@ -48,14 +48,26 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
             };
         }
 
-        cJSON *bg_alt = cJSON_GetObjectItem(settings, "bg_color_alt");
-        if (bg_alt) {
-            out_settings->bg_color_alt = (Color) {
-                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "r")),
-                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "g")),
-                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "b")),
-                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "a"))
-            };
+        // Parse named background colors from the "bg_colors" object.
+        // Each key is a color name (e.g. "black", "white") and its value
+        // is an { r, g, b, a } object.  Actions can reference these names
+        // by passing the color name as a string argument.
+        cJSON *bg_colors = cJSON_GetObjectItem(settings, "bg_colors");
+        if (cJSON_IsObject(bg_colors)) {
+            out_settings->bg_color_count = 0;
+            cJSON *child = NULL;
+            cJSON_ArrayForEach(child, bg_colors) {
+                if (out_settings->bg_color_count >= MAX_BG_COLORS) break;
+                strncpy(out_settings->bg_colors[out_settings->bg_color_count].name,
+                        child->string, BG_COLOR_NAME_MAX - 1);
+                out_settings->bg_colors[out_settings->bg_color_count].color = (Color) {
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(child, "r")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(child, "g")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(child, "b")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(child, "a"))
+                };
+                out_settings->bg_color_count++;
+            }
         }
 
         cJSON *fp = cJSON_GetObjectItem(settings, "program_font_path");
