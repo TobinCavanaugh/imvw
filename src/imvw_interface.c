@@ -4,12 +4,12 @@
 
 #include "imvw_interface.h"
 
-#include "dirent_win32.h"
+#include "core/platform/dirent_win32.h"
 #include <external/stb_image.h>
 #include <external/tinyfiledialogs.h>
 //#include "image_decoder.h"
 
-#include "slfile.h"
+#include "utils/slfile.h"
 
 
 // TODO DUPLICATED SHIFT_FINE

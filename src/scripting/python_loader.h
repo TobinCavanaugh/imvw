@@ -2,7 +2,7 @@
 // Created by tobin on 2025-02-23.
 //
 
-#include "dialect.h"
+#include "core/dialect.h"
 
 #ifndef PYTHON_LOADER_H
 #define PYTHON_LOADER_H

@@ -10,11 +10,11 @@
 #include <string.h>
 // sys/stat.h available on MSVC as sysstat.h
 // libgen.h replaced by Win32 (basename implemented inline)
-#include "dirent_win32.h"
+#include "core/platform/dirent_win32.h"
 #include <stdio.h>
-#include "pthread_win32.h"
+#include "core/platform/pthread_win32.h"
 
-#include "dialect.h"
+#include "core/dialect.h"
 
 // Windows basename replacement (libgen.h not available on MSVC)
 static inline const char* win32_basename(const char* path) {

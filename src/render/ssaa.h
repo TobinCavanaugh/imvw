@@ -12,7 +12,7 @@
 #ifndef SSAA_H
 #define SSAA_H
 
-#include "dialect.h"
+#include "core/dialect.h"
 #include <trlib.h>
 
 // ---- Public API -----------------------------------------------------------

@@ -14,7 +14,7 @@
 #include <shellapi.h> // For ShellExecute
 #include <shlwapi.h>  // For StrFormatByteSize64
 #include <shlobj.h>   // For SHGetFolderPathA
-#include <pthread_time.h>
+#include "core/platform/pthread_time.h"
 
 // Undefine Windows macros that conflict with Raylib
 #undef CloseWindow

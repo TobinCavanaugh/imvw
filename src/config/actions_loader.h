@@ -2,8 +2,8 @@
 // Created by tobin on 2025-02-22.
 //
 
-#include "keyboard_key.h"
-#include "flut.h"
+#include "input/keyboard_key.h"
+#include "input/flut.h"
 
 #ifndef ACTIONS_LOADER_H
 #define ACTIONS_LOADER_H

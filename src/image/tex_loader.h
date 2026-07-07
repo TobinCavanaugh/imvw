@@ -1,8 +1,8 @@
 #ifndef TEX_LOADER_H
 #define TEX_LOADER_H
 
-#include "dialect.h"
-#include "image_decoder.h"
+#include "core/dialect.h"
+#include "image/image_decoder.h"
 
 #define ERR_TEX(errname) fprintf(stderr, "ERR|TEX: \n\tat: %s:%d \n\t`%s`\n", __FILE__, __LINE__, errname);
 

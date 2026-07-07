@@ -1,7 +1,7 @@
 
 #include "external/stb_image.h"
 
-#include "win_include.h"
+#include "core/win_include.h"
 
 // GLFW removed (tr_raylib uses Win32)
 #include <Python.h>
@@ -12,23 +12,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <trlib.h>
-#include "pthread_win32.h"
+#include "core/platform/pthread_win32.h"
 // #include <external/miniaudio.h> // not needed
 
 // raymath.h replaced by tr_raylib.h
-#include "dialect.h"
-#include "flut.h"
+#include "core/dialect.h"
+#include "input/flut.h"
 #include "external/tinyfiledialogs.h"
-#include "settings.h"
-#include "actions_loader.h"
-#include "settings_loader.h"
-#include "python_loader.h"
-#include "context_t.h"
+#include "core/settings.h"
+#include "config/actions_loader.h"
+#include "config/settings_loader.h"
+#include "scripting/python_loader.h"
+#include "core/context_t.h"
 #include "imvw_interface.h"
-#include "font_loader.h"
-#include "tex_loader.h"
-#include "imvw_time.h"
-#include "ssaa.h"
+#include "ui/font_loader.h"
+#include "image/tex_loader.h"
+#include "utils/imvw_time.h"
+#include "render/ssaa.h"
 
 #define nameof(a) #a
 

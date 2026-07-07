@@ -22,13 +22,13 @@
 // #define DrawText    WinDrawText
 // #define DrawTextEx  WinDrawTextEx
 
-#include "dialect.h"
-#include "context_t.h"
-#include "settings.h"
-#include "dialect.h"
+#include "core/dialect.h"
+#include "core/context_t.h"
+#include "core/settings.h"
+#include "core/dialect.h"
 #include <string.h>
 #include <Python.h>
-#include "win_include.h"
+#include "core/win_include.h"
 // #include <fileapi.h>
 #include <stdio.h>
 

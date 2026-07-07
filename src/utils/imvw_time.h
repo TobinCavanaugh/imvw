@@ -4,7 +4,7 @@
 
 #ifndef IMVW_TIME_H
 #define IMVW_TIME_H
-#include <dialect.h>
+#include "core/dialect.h"
 
 
 f128 getTimeHD_ms();

@@ -5,7 +5,7 @@
 #ifndef KEYBOARD_KEY_H
 #define KEYBOARD_KEY_H
 // #include "raylib.h"
-#include "dialect.h"
+#include "core/dialect.h"
 
 #define KEY_ANY -1
 

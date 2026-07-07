@@ -7,7 +7,7 @@
 
 // raylib replaced by tr_raylib.h (included via dialect.h)
 #include "dialect.h"
-#include "pthread_win32.h"
+#include "core/platform/pthread_win32.h"
 // GLFW removed (tr_raylib uses Win32)
 #include "settings.h"
 

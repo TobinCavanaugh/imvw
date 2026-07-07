@@ -4,7 +4,7 @@
 
 #ifndef IMVW_INIT_H
 #define IMVW_INIT_H
-#include <dialect.h>
+#include "core/dialect.h"
 
 u0 imvw_init();
 

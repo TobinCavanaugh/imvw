@@ -5,7 +5,7 @@
 #ifndef FONT_LOADER_H
 #define FONT_LOADER_H
 
-#include "dialect.h"
+#include "core/dialect.h"
 
 #define LOG_FONT "LOG|FONT: "
 

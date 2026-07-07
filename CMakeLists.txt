@@ -80,23 +80,23 @@ find_package(Python REQUIRED COMPONENTS Development)
 add_subdirectory(../d3d11_bench trlib_build)
 
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_LIST_DIR}/sources/*.c"
+        "${CMAKE_CURRENT_LIST_DIR}/src/*.c"
 )
 
-set(PROJECT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/sources/")
+set(PROJECT_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/src/")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 add_executable(${PROJECT_NAME}
-        sources/main.c
-        sources/imvw_interface.c
-        sources/imvw_time.c
-        sources/imvw_init.c
-        sources/stb_image_impl.c
-        sources/win_include.h
-        sources/image_decoder.h
+        src/main.c
+        src/imvw_interface.c
+        src/utils/imvw_time.c
+        src/imvw_init.c
+        src/image/stb_image_impl.c
+        src/core/win_include.h
+        src/image/image_decoder.h
         resources.rc
 )
 

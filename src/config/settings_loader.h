@@ -1,7 +1,7 @@
 #ifndef SETTINGS_LOADER_H
 #define SETTINGS_LOADER_H
 
-#include "context_t.h"
+#include "core/context_t.h"
 #include <stdlib.h>
 
 extern context_t ctx;

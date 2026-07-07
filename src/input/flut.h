@@ -6,7 +6,6 @@
 #define FLUT_H
 
 #define FLUT_FUNC_NAME_MAX 64
-#include <flut.h>
 
 
 typedef struct {

@@ -3,9 +3,9 @@
 // Modified for MSVC: QueryPerformanceCounter instead of clock_gettime
 //
 
-#include "imvw_time.h"
-#include "win_include.h"
-#include "dialect.h"
+#include "utils/imvw_time.h"
+#include "core/win_include.h"
+#include "core/dialect.h"
 #include "imvw_interface.h"
 
 static LARGE_INTEGER g_qpc_freq = {0};
