@@ -129,7 +129,7 @@
     },
     {
       "func": "Toggle_BG_Color",
-      "press": "t"
+      "press": "b"
     },
     {
       "func": "exit",

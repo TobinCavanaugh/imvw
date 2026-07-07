@@ -28,6 +28,7 @@
 #include "font_loader.h"
 #include "tex_loader.h"
 #include "imvw_time.h"
+#include "ssaa.h"
 
 #define nameof(a) #a
 
@@ -404,6 +405,36 @@ void *async_loader(void *arg) {
 }
 
 i32 main(i32 argc, char **argv) {
+    // ── DPI awareness (must be set before any window creation) ──
+    {
+        HMODULE hUser32 = GetModuleHandleA("user32.dll");
+        if (hUser32) {
+            typedef BOOL (WINAPI *SetProcessDpiAwarenessContext_t)(HANDLE);
+            SetProcessDpiAwarenessContext_t pFn =
+                (SetProcessDpiAwarenessContext_t)GetProcAddress(hUser32,
+                    "SetProcessDpiAwarenessContext");
+            if (pFn) {
+                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (HANDLE)-4
+                pFn((HANDLE)(LONG_PTR)-4);
+            } else {
+                // Fallback: SetProcessDpiAwareness (shcore.dll, Win 8.1+)
+                typedef HRESULT (WINAPI *SetProcessDpiAwareness_t)(int);
+                HMODULE hShcore = LoadLibraryA("shcore.dll");
+                if (hShcore) {
+                    SetProcessDpiAwareness_t pAware =
+                        (SetProcessDpiAwareness_t)GetProcAddress(hShcore,
+                            "SetProcessDpiAwareness");
+                    // PROCESS_PER_MONITOR_DPI_AWARE = 2
+                    if (pAware) pAware(2);
+                    FreeLibrary(hShcore);
+                } else {
+                    // Last resort: SetProcessDPIAware (Vista+)
+                    SetProcessDPIAware();
+                }
+            }
+        }
+    }
+
     // Enable precision timers on Windows to make Sleep(1) actually 1ms
     timeBeginPeriod(1);
 
@@ -439,6 +470,15 @@ i32 main(i32 argc, char **argv) {
     SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(ld.target_w, ld.target_h, WINDOW_TITLE);
     log_step("InitWindow");
+
+    // Initialise SSAA offscreen render target (1.1× supersampling)
+    {
+        ID3D11Device *dev = tr_get_device(tr_get_state());
+        if (dev) {
+            ssaa_init(dev);
+            ssaa_resize(ld.target_w, ld.target_h, dev);
+        }
+    }
 
     pthread_join(loader_thr, NULL);
     log_step("loader_thread join");
@@ -542,11 +582,20 @@ i32 main(i32 argc, char **argv) {
             python_run_script_func(python_scripts_array, python_scripts_count, "update");
         }
 
+        // Track window dimensions for SSAA — if the window was resized,
+        // recreate the offscreen render target at the new size.
+        static int prev_win_w = 0, prev_win_h = 0;
+        ctx.window_width  = GetRenderWidth();
+        ctx.window_height = GetRenderHeight();
+        if (ctx.window_width != prev_win_w || ctx.window_height != prev_win_h) {
+            prev_win_w = ctx.window_width;
+            prev_win_h = ctx.window_height;
+            ID3D11Device *dev = tr_get_device(tr_get_state());
+            if (dev) ssaa_resize(ctx.window_width, ctx.window_height, dev);
+        }
+
         ctx.mouse_pos = GetMousePosition();
         ctx.mouse_delta = GetMouseDelta();
-
-        ctx.window_width = GetRenderWidth();
-        ctx.window_height = GetRenderHeight();
 
         if (ctx.focused && (IsKeyPressed(KEY_F11) || (ALT_DOWN && IsKeyPressed(KEY_ENTER)))) {
             if (IsWindowMaximized()) {
@@ -612,7 +661,15 @@ i32 main(i32 argc, char **argv) {
         // HACK: D3D11 ClearRenderTargetView alpha doesn't propagate through DWM
         // correctly for transparent windows, so we clear to transparent then draw
         // a fullscreen rect through the shader pipeline with premultiplied blend.
+        // NOTE: This must run BEFORE ssaa_begin_frame so it clears the BACKBUFFER
+        // (set by BeginDrawing) — not the SSAA offscreen target.
         ClearBackground(BLANK);
+
+        // ── Redirect rendering to SSAA offscreen target (1.1× supersampling) ──
+        ID3D11DeviceContext    *d3d_ctx = tr_get_context(tr_get_state());
+        ID3D11RenderTargetView *d3d_rtv = tr_get_rtv(tr_get_state());
+        Color bg_clear = ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color;
+        if (d3d_ctx && d3d_rtv) ssaa_begin_frame(d3d_ctx, d3d_rtv, bg_clear);
         BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
         {
             Color cb = ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color;
@@ -713,23 +770,38 @@ i32 main(i32 argc, char **argv) {
             if (!info.enabled) continue;
 
             // Standard Uniforms
-            // TODO SET UP MORE SHADER LOCS. IDK HWO THIS WORKS
-            int resLoc = GetShaderLocation(shader, "screenResolution");
+            // NOTE: SSAA renders at 1.1× viewport, so SV_POSITION in the pixel
+            // shader is in offscreen coordinates.  We scale BOTH cameraOffset
+            // AND cameraZoom by SSAA_SCALE so factors cancel out:
+            //   (screenPos - camOff*1.1) / (zoom*1.1) + target
+            //   = (screenPos/1.1 - camOff) / zoom + target
+            // Panning also cancels correctly: Δ*1.1 / (zoom*1.1) = Δ/zoom.
+            float ss = ssaa_get_scale();
+            int resLoc    = GetShaderLocation(shader, "screenResolution");
             int targetLoc = GetShaderLocation(shader, "cameraTarget");
             int offsetLoc = GetShaderLocation(shader, "cameraOffset");
-            int zoomLoc = GetShaderLocation(shader, "cameraZoom");
+            int zoomLoc   = GetShaderLocation(shader, "cameraZoom");
 
-            Vector2 res = {(float) GetScreenWidth(), (float) GetScreenHeight()};
-            SetShaderValue(shader, resLoc, &res, SHADER_UNIFORM_VEC2);
+            Vector2 res     = {(float) GetScreenWidth(), (float) GetScreenHeight()};
+            Vector2 cam_off = {ctx.real_camera.offset.x * ss, ctx.real_camera.offset.y * ss};
+            float   cam_zom = ctx.real_camera.zoom * ss;
+            SetShaderValue(shader, resLoc,    &res,     SHADER_UNIFORM_VEC2);
             SetShaderValue(shader, targetLoc, &ctx.real_camera.target, SHADER_UNIFORM_VEC2);
-            SetShaderValue(shader, offsetLoc, &ctx.real_camera.offset, SHADER_UNIFORM_VEC2);
-            SetShaderValue(shader, zoomLoc, &ctx.real_camera.zoom, SHADER_UNIFORM_FLOAT);
+            SetShaderValue(shader, offsetLoc, &cam_off, SHADER_UNIFORM_VEC2);
+            SetShaderValue(shader, zoomLoc,   &cam_zom, SHADER_UNIFORM_FLOAT);
 
             BeginShaderMode(shader);
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), WHITE);
             EndShaderMode();
         }
         EndBlendMode();
+
+        // Flush any remaining batched draws to the offscreen target, then
+        // restore the backbuffer and blit the offscreen → backbuffer with
+        // bilinear filtering (downscales from 1.1× → 1.0× for SSAA).
+        draw_flush();
+        if (d3d_ctx && d3d_rtv)
+            ssaa_end_frame(d3d_ctx, d3d_rtv, ctx.window_width, ctx.window_height);
 
         EndDrawing();
 
@@ -744,6 +816,7 @@ i32 main(i32 argc, char **argv) {
         tr_pump_messages(tr_get_state());
     }
 
+    ssaa_cleanup();
     CloseWindow();
     return 0;
 }
