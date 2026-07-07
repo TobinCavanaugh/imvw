@@ -5,6 +5,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include <tr_raylib.h>
 #include "dialect.h"
 
 // TODO Allow custom shader args

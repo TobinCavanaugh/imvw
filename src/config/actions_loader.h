@@ -4,6 +4,8 @@
 
 #include "input/keyboard_key.h"
 #include "input/flut.h"
+#include "../external/cJSON.h"
+#include <stdio.h>
 
 #ifndef ACTIONS_LOADER_H
 #define ACTIONS_LOADER_H
@@ -54,7 +56,7 @@ typedef struct {
     u8 priv_use_mouse;
 } key_action_t;
 
-u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key_action_t act) {
+static u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key_action_t act) {
     *out_ptr_actions_array = (key_action_t *) realloc(*out_ptr_actions_array,
                                                       (*out_actions_count + 1) * sizeof(key_action_t));
     if (*out_ptr_actions_array == NULL) {
@@ -66,7 +68,7 @@ u0 actions_add(key_action_t **out_ptr_actions_array, i32 *out_actions_count, key
 
 
 /// Load the key actions from the `imvw.json` file.
-u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out_actions_count) {
+static u0 load_actions(cJSON *json_data, key_action_t **out_ptr_actions_array, i32 *out_actions_count) {
     // TODO: Final build should check next to exe? or maybe in %appdata%
 
     // Parse the actions

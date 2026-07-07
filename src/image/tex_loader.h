@@ -2,7 +2,7 @@
 #define TEX_LOADER_H
 
 #include "core/dialect.h"
-#include "image/image_decoder.h"
+#include "image/decoders.h"
 
 #define ERR_TEX(errname) fprintf(stderr, "ERR|TEX: \n\tat: %s:%d \n\t`%s`\n", __FILE__, __LINE__, errname);
 

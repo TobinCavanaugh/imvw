@@ -93,10 +93,18 @@ add_executable(${PROJECT_NAME}
         src/main.c
         src/imvw_interface.c
         src/utils/imvw_time.c
-        src/imvw_init.c
+        src/utils/profiler.c
         src/image/stb_image_impl.c
+        src/image/decoders.c
+        src/ui/font.c
+        src/ui/text.c
+        src/input/actions.c
+        src/input/flut.c
+        src/render/shaders.c
+        src/app/init.c
+        src/app/main_loop.c
+        src/app/async_loader.c
         src/core/win_include.h
-        src/image/image_decoder.h
         resources.rc
 )
 
@@ -107,6 +115,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${TIFF_INCLUDE_DIR}
         ${WEBP_INCLUDE_DIR}
         ${tinyexr_SOURCE_DIR}
+        ${Python_INCLUDE_DIRS}
+        ${Python_INCLUDE_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE

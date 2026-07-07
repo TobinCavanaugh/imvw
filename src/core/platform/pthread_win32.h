@@ -1,20 +1,22 @@
-// pthread_win32.h — Minimal Win32 shim providing pthread_t, pthread_create, pthread_detach
-// for MSVC builds. Use CreateThread + CloseHandle under the hood.
+// pthread_win32.h — Minimal Win32 pthread shim.
+// Only used on MSVC where real pthread.h doesn't exist.
+// MinGW-w64 (w64devkit) bundles winpthreads — real pthread.h is available.
 #ifndef PTHREAD_WIN32_H
 #define PTHREAD_WIN32_H
 
+// MinGW-w64 has a real pthread.h — use that instead of the shim.
+#ifdef __MINGW32__
+#include <pthread.h>
+#else
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <stdlib.h>  // malloc, free — MUST be before usage in this header
+#include <stdlib.h>
 
-// pthread_t is a HANDLE (CreateThread returns HANDLE)
 typedef HANDLE pthread_t;
 
-// Thread function signature: void* (*)(void*)
 typedef void* (*pthread_routine_t)(void*);
 
-// Wrapper struct to pass routine + arg to CreateThread
-// (CreateThread is fine for our use since we don't use CRT per-thread data)
 static DWORD WINAPI pthread_win32_wrapper(LPVOID lpParam) {
     void** params = (void**)lpParam;
     pthread_routine_t routine = (pthread_routine_t)params[0];
@@ -45,9 +47,10 @@ static inline int pthread_detach(pthread_t thread) {
 static inline int pthread_join(pthread_t thread, void** retval) {
     if (!thread) return -1;
     DWORD result = WaitForSingleObject(thread, INFINITE);
-    if (retval) *retval = NULL;  // we can't easily get the return value
+    if (retval) *retval = NULL;
     CloseHandle(thread);
     return (result == WAIT_OBJECT_0) ? 0 : -1;
 }
 
+#endif // !__MINGW32__
 #endif // PTHREAD_WIN32_H

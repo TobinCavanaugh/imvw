@@ -2,6 +2,7 @@
 // Created by tobin on 2025-02-23.
 //
 
+#include <Python.h>
 #include "core/dialect.h"
 
 #ifndef PYTHON_LOADER_H
@@ -9,7 +10,7 @@
 
 #define ERR_PY(errname, ...) fprintf(stderr, "ERR|PY: " errname"\n\t@ %s:%d\n", __VA_ARGS__, __FILE__, __LINE__);
 
-PyObject *test_func(PyObject *self, PyObject *args) {
+static PyObject *test_func(PyObject *self, PyObject *args) {
     printf("Ran from python\n");
     return PyTuple_New(0);
 }
@@ -31,10 +32,10 @@ PyMODINIT_FUNC PyInit_main_module(void) {
     return PyModule_Create(&main_module);
 }
 
-PyObject **scripts_array = NULL;
-i32 scripts_count = 0;
+static PyObject **scripts_array = NULL;
+static i32 scripts_count = 0;
 
-u0 scripts_add(char *name) {
+static u0 scripts_add(char *name) {
     char full_path[512];
     snprintf(full_path, sizeof(full_path), "%s%s", ASSETS_PATH, name);
 

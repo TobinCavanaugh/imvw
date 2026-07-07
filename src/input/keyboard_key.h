@@ -19,7 +19,7 @@ typedef struct {
     int key;
 } mouse_button_t;
 
-mouse_button_t mouse_buttons[] = {
+static mouse_button_t mouse_buttons[] = {
         {"BUTTON_LEFT",    MOUSE_BUTTON_LEFT},
         {"BUTTON_RIGHT",   MOUSE_BUTTON_RIGHT},
         {"BUTTON_MIDDLE",  MOUSE_BUTTON_MIDDLE},
@@ -29,7 +29,7 @@ mouse_button_t mouse_buttons[] = {
         {"BUTTON_BACK",    MOUSE_BUTTON_BACK},
 };
 
-keyboard_key_t keyboard_keys[] = {
+static keyboard_key_t keyboard_keys[] = {
         {"NULL", KEY_NULL},
         {"APOSTROPHE", KEY_APOSTROPHE},
         {"COMMA", KEY_COMMA},
@@ -146,7 +146,7 @@ keyboard_key_t keyboard_keys[] = {
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof(a[0]))
 
-i32 GetKeyFromName(char *name) {
+static i32 GetKeyFromName(char *name) {
     char *pre = "KEY_";
     if (strncmp(pre, name, strlen(pre)) == 0) {
         name += strlen(pre);
@@ -167,7 +167,7 @@ i32 GetKeyFromName(char *name) {
     return KEY_NULL;
 }
 
-MouseButton GetButtonFromName(char *name) {
+static MouseButton GetButtonFromName(char *name) {
     char *pre = "MOUSE_";
     if (strncmp(pre, name, strlen(pre)) == 0) {
         name += strlen(pre);

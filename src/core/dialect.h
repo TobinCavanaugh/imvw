@@ -6,7 +6,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "tr_raylib.h"
+#include <tr_raylib.h>
 
 #ifndef TOBIN_DIALECT
 #define TOBIN_DIALECT
