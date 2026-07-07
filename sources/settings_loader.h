@@ -47,6 +47,21 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
                     (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg, "a"))
             };
         }
+
+        cJSON *bg_alt = cJSON_GetObjectItem(settings, "bg_color_alt");
+        if (bg_alt) {
+            out_settings->bg_color_alt = (Color) {
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "r")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "g")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "b")),
+                    (u8) cJSON_GetNumberValue(cJSON_GetObjectItem(bg_alt, "a"))
+            };
+        }
+
+        cJSON *fp = cJSON_GetObjectItem(settings, "program_font_path");
+        if (cJSON_IsString(fp)) {
+            out_settings->program_font_path = strdup(cJSON_GetStringValue(fp));
+        }
     }
 
     // --- NEW: Shader Loading Logic ---

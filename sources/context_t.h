@@ -49,6 +49,12 @@ typedef struct {
 
     Font current_font;
 
+    // Fallback font atlas (GDI-generated RGBA pixels for pixel-by-pixel drawing)
+    u8 *fallback_atlas_pixels;      // RGBA bytes, atlas_w * atlas_h * 4
+    int fallback_atlas_w;
+    int fallback_atlas_h;
+    int fallback_atlas_widths[96];  // per-glyph pixel widths for ASCII 32..127
+
     char **shader_fs_sources;
     char **shader_vs_sources;
     u8 *font_data;

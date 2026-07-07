@@ -158,9 +158,16 @@ f32 get_system_font_size() {
     return fontsize;
 }
 
-f32 draw_properties(f32 properties_line, char *format, ...) {
-    if (ctx.current_font.texture.height == 0) return 0;
+// draw_flush is defined in tr_raylib_draw.c (not declared in headers)
+// but has external linkage — force-flushes the batched draw queue.
+// Use extern "C" in case trlib was compiled as C (static lib).
+#ifdef __cplusplus
+extern "C" void draw_flush(void);
+#else
+extern void draw_flush(void);
+#endif
 
+f32 draw_properties(f32 properties_line, char *format, ...) {
     va_list args;
     va_start(args, format);
     static char properties_working[PATH_MAX];
@@ -172,13 +179,37 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
     strcat(properties_working, " ");
 
     f32 font_size = get_system_font_size();
+    Color text_col = { 230, 230, 230, 255 };
+    Color bg = { 0, 0, 0, 180 };
 
-    BeginBlendMode(BLEND_MULTIPLIED);
-    DrawRectangle(0, (i32) properties_line, (i32) MeasureTextEx(ctx.current_font, properties_working, font_size, 0).x,
-                  (i32) font_size, settings.bg_color);
-    EndBlendMode();
+    // If we have a loaded font (handle != NULL — texture is a compat stub
+    // in tr_raylib), use proper text rendering.
+    // NOTE: tr_raylib's DrawTextPro ignores the fontSize parameter and
+    // always draws at the font's baseSize, so we must use that for the
+    // background rect height and line spacing.
+    if (ctx.current_font.handle != NULL) {
+        i32 fs = ctx.current_font.baseSize ? ctx.current_font.baseSize : (i32)font_size;
+        i32 tw = (i32) MeasureTextEx(ctx.current_font, properties_working, (f32)fs, 0).x;
+        // Draw background rect via the batched pipeline, then flush so it
+        // renders immediately — DrawTextPro renders through its own pipeline
+        // which ignores the batch, so flushing here ensures the correct order.
+        DrawRectangle(0, (i32) properties_line, tw, fs, bg);
+        draw_flush();
+        DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line),
+                    V2f(0, 0), 0, (f32)fs, 0, text_col);
+        return (f32)fs;
+    }
 
-    DrawTextPro(ctx.current_font, properties_working, V2f(0, properties_line), V2f(0, 0), 0, font_size, 0, WHITE);
+    // Fallback: pixel-by-pixel from GDI-generated atlas data.
+    if (ctx.fallback_atlas_pixels != NULL) {
+        // Rough text-width estimate for the background rect.
+        i32 len = (i32) strlen(properties_working);
+        i32 tw = (i32)((f32)len * font_size * 0.65f);
+        DrawRectangle(0, (i32) properties_line, tw, (i32) font_size, bg);
+        draw_text_fallback(properties_working, 2.0f, properties_line + 2.0f,
+                           font_size, text_col);
+    }
+
     return font_size;
 }
 
@@ -307,7 +338,7 @@ void *async_loader(void *arg) {
 
         // Pre-load font into memory
         char *font_path = settings.program_font_path;
-        if (!font_path || !strlen(font_path)) font_path = "C:\\Windows\\Fonts\\segoeui.ttf";
+        if (!font_path || !strlen(font_path)) font_path = "assets\\segoeui.ttf";
         FILE *f = fopen(font_path, "rb");
         if (f) {
             fseek(f, 0, SEEK_END);
@@ -548,13 +579,16 @@ i32 main(i32 argc, char **argv) {
             SendMessage((HWND) GetWindowHandle(), 0x007B /*WM_CONTEXTMENU*/, (WPARAM) GetWindowHandle(), 0);
         }
 
-        if (ctx.focused && GetMouseWheelMove() && !ALT_DOWN) {
-            Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
-            ctx.target_camera.offset = GetMousePosition();
-            ctx.target_camera.target = mwp;
+        if (!ALT_DOWN) {
+            f32 wheel = GetMouseWheelMove();
+            if (wheel != 0) {
+                Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
+                ctx.target_camera.offset = GetMousePosition();
+                ctx.target_camera.target = mwp;
 
-            f32 z = GetMouseWheelMove() * GetFrameTime();
-            Camera_ZoomHold(&z);
+                f32 z = wheel * 0.15f;
+                Camera_ZoomHold(&z);
+            }
         }
 
         f32 dt = GetFrameTime();
@@ -575,7 +609,16 @@ i32 main(i32 argc, char **argv) {
         // ── Action processing (runs after poll_input so key state is current) ──
         process_actions();
 
-        ClearBackground(ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color);
+        // HACK: D3D11 ClearRenderTargetView alpha doesn't propagate through DWM
+        // correctly for transparent windows, so we clear to transparent then draw
+        // a fullscreen rect through the shader pipeline with premultiplied blend.
+        ClearBackground(BLANK);
+        BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
+        {
+            Color cb = ctx.use_alt_bg ? settings.bg_color_alt : settings.bg_color;
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), cb);
+        }
+        EndBlendMode();
 
         BeginMode2D(ctx.real_camera);
         {

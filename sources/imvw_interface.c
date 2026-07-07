@@ -366,11 +366,25 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
             if (wParam == SIZE_MAXIMIZED) settings.maximized = 1;
             else if (wParam == SIZE_RESTORED) settings.maximized = 0;
 
-            // Keep the camera centred when the window is resized
+            // Keep the camera centred when the window is resized, matching
+            // Camera_Home_NoResetZoom behavior (which also resets target to origin)
             i32 new_w = LOWORD(lParam);
             i32 new_h = HIWORD(lParam);
             if (new_w > 0 && new_h > 0) {
                 ctx.target_camera.offset = V2f((f32) new_w / 2.0f, (f32) new_h / 2.0f);
+                ctx.target_camera.target = V2f(0, 0);
+                // Snap real_camera immediately to avoid one-frame lerp lag
+                // which causes ghosting, wrong zoom-to-mouse, and apparent squishing
+                ctx.real_camera.offset = ctx.target_camera.offset;
+                ctx.real_camera.target = ctx.target_camera.target;
+                ctx.real_camera.rotation = ctx.target_camera.rotation;
+                ctx.real_camera.zoom = ctx.target_camera.zoom;
+                // Update ortho projection matrix immediately for this frame.
+                // During live resize (drag), trlib's WM_SIZE handler resizes the
+                // swapchain but does NOT set the resized flag, so tr_handle_resize
+                // in BeginDrawing skips draw_update_size — causing the ortho matrix
+                // to stay at the old dimensions and the image to stretch.
+                draw_update_size(new_w, new_h);
             }
             break;
         }
