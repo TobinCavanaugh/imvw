@@ -29,6 +29,8 @@
 #include "image/tex_loader.h"
 #include "utils/imvw_time.h"
 #include "render/ssaa.h"
+#include "utils/profiler.h"
+#include <stdarg.h>
 
 #define nameof(a) #a
 
@@ -213,9 +215,9 @@ f32 draw_properties(f32 properties_line, char *format, ...) {
 
     // If we have a loaded font (handle != NULL — texture is a compat stub
     // in tr_raylib), use proper text rendering.
-    // NOTE: tr_raylib's DrawTextPro ignores the fontSize parameter and
-    // always draws at the font's baseSize, so we must use that for the
-    // background rect height and line spacing.
+    // NOTE: tr_raylib's DrawTextPro draws at the font's baseSize regardless
+    // of the fontSize parameter, so we must use that for layout. SSAA in
+    // render/ssaa.c provides the frame-level anti-aliasing (1.1x downscale).
     if (ctx.current_font.handle != NULL) {
         i32 fs = ctx.current_font.baseSize ? ctx.current_font.baseSize : (i32)font_size;
         i32 tw = (i32) MeasureTextEx(ctx.current_font, properties_working, (f32)fs, 0).x;
@@ -367,7 +369,10 @@ void *async_loader(void *arg) {
 
         // Pre-load font into memory
         char *font_path = settings.program_font_path;
-        if (!font_path || !strlen(font_path)) font_path = "assets\\segoeui.ttf";
+        if (!font_path || !strlen(font_path)) {
+            fprintf(stderr, "IMVW|FONT: no program_font_path in config — falling back to assets\\segoeui.ttf\n");
+            font_path = "assets\\segoeui.ttf";
+        }
         FILE *f = fopen(font_path, "rb");
         if (f) {
             fseek(f, 0, SEEK_END);
@@ -376,6 +381,8 @@ void *async_loader(void *arg) {
             ctx.font_data = (u8 *) malloc(ctx.font_data_size);
             fread(ctx.font_data, 1, ctx.font_data_size, f);
             fclose(f);
+        } else {
+            fprintf(stderr, "IMVW|FONT: ERROR — could not open `%s` for font pre-load\n", font_path);
         }
 
         cJSON_Delete(json_data);
@@ -599,13 +606,6 @@ i32 main(i32 argc, char **argv) {
 
     printf("IMVW|LOG: total_startup_time_ms: %.2Lf\n", getTimeHD_ms() - overall_start);
 
-#ifdef IMVW_PROFILE
-    // Frame timing accumulators
-    f128 t_pre     = 0, t_lerp = 0, t_begin = 0, t_actions = 0,
-         t_setup = 0, t_img  = 0, t_props   = 0, t_shaders= 0,
-         t_flush  = 0, t_present = 0, t_pump    = 0, t_total  = 0;
-#endif
-
     i32 frame_count = 0;
     f128 loop_entry_ms;
     static u8 bg_idle = 0;
@@ -640,9 +640,7 @@ i32 main(i32 argc, char **argv) {
 
         loop_entry_ms = getTimeHD_ms();
         frame_count++;
-#ifdef IMVW_PROFILE
-        f128 t0 = loop_entry_ms;
-#endif
+        profiler_begin_frame(loop_entry_ms);
         if (settings.python_scripting) {
             python_run_script_func(python_scripts_array, python_scripts_count, "update");
         }
@@ -705,9 +703,7 @@ i32 main(i32 argc, char **argv) {
             }
         }
 
-#ifdef IMVW_PROFILE
-        f128 t1 = getTimeHD_ms();  t_pre += t1 - t0;  t0 = t1;
-#endif
+        profiler_mark("pre-frame (python+input+state)");
 
         f32 dt = GetFrameTime();
         ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset,
@@ -722,9 +718,7 @@ i32 main(i32 argc, char **argv) {
         roundCamera2DValues(&ctx.real_camera, 0.001f);
         roundCamera2DValues(&ctx.target_camera, 0.001f);
 
-#ifdef IMVW_PROFILE
-        f128 t2 = getTimeHD_ms();  t_lerp += t2 - t0;  t0 = t2;
-#endif
+        profiler_mark("camera lerp");
 
         // If unfocused but not yet asleep, check whether the camera has
         // converged close enough to its target to safely enter the sleep
@@ -746,9 +740,7 @@ i32 main(i32 argc, char **argv) {
         }
 
         BeginDrawing();
-#ifdef IMVW_PROFILE
-        f128 t3 = getTimeHD_ms();  t_begin += t3 - t0;  t0 = t3;
-#endif
+        profiler_mark("BeginDrawing (poll_input)");
 
         // ── Action processing (runs after poll_input so key state is current) ──
         // Skip actions for 2 frames after waking from background sleep so the
@@ -759,9 +751,7 @@ i32 main(i32 argc, char **argv) {
         } else {
             process_actions();
         }
-#ifdef IMVW_PROFILE
-        f128 t4 = getTimeHD_ms();  t_actions += t4 - t0;  t0 = t4;
-#endif
+        profiler_mark("process_actions");
 
         // HACK: D3D11 ClearRenderTargetView alpha doesn't propagate through DWM
         // correctly for transparent windows, so we clear to transparent then draw
@@ -786,9 +776,7 @@ i32 main(i32 argc, char **argv) {
         }
         EndBlendMode();
 
-#ifdef IMVW_PROFILE
-        f128 t5 = getTimeHD_ms();  t_setup += t5 - t4;  t0 = t5;
-#endif
+        profiler_mark("clear + SSAA + bg rect");
 
         BeginMode2D(ctx.real_camera);
         {
@@ -842,44 +830,7 @@ i32 main(i32 argc, char **argv) {
         }
         EndMode2D();
 
-#ifdef IMVW_PROFILE
-        f128 t6 = getTimeHD_ms();  t_img += t6 - t5;  t0 = t6;
-#endif
-
-        if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.width > 0) {
-            // Property line height
-            f32 pl = 0;
-
-            // Draw the image dimensions
-            pl += draw_properties(pl, "%dx%d", ctx.current_tex.width, ctx.current_tex.height);
-
-            // Draw the file size
-            char buf[64 + 32];
-            StrFormatByteSize64(ctx.tex_fsize, buf, sizeof(buf));
-            pl += draw_properties(pl, "%s", buf);
-
-            // Draw how many channels the image has
-            pl += draw_properties(pl, "Channels: %d", ctx.tex_channels);
-
-            // Display pixelformat
-            pixel_format_to_str_s((PixelFormat) ctx.current_tex.format, buf, sizeof(buf));
-            pl += draw_properties(pl, "Format: %s", buf);
-
-            // Uggo
-            pl += draw_properties(pl, "Filter: %s",
-                                  settings.texture_filter == TEXTURE_FILTER_BILINEAR
-                                  ? "Bilinear"
-                                  : (settings.texture_filter == TEXTURE_FILTER_TRILINEAR
-                                     ? "Trilinear"
-                                     : "Point"));
-
-            pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
-            pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
-        }
-
-#ifdef IMVW_PROFILE
-        f128 t7 = getTimeHD_ms();  t_props += t7 - t6;  t0 = t7;
-#endif
+        profiler_mark("image drawing");
 
         // --- Custom Shader Pass ---
 
@@ -917,9 +868,7 @@ i32 main(i32 argc, char **argv) {
         }
         EndBlendMode();
 
-#ifdef IMVW_PROFILE
-        f128 t8 = getTimeHD_ms();  t_shaders += t8 - t7;  t0 = t8;
-#endif
+        profiler_mark("custom shader pass");
 
         // Flush any remaining batched draws to the offscreen target, then
         // restore the backbuffer and blit the offscreen → backbuffer with
@@ -928,48 +877,62 @@ i32 main(i32 argc, char **argv) {
         if (d3d_ctx && d3d_rtv)
             ssaa_end_frame(d3d_ctx, d3d_rtv, ctx.window_width, ctx.window_height);
 
-#ifdef IMVW_PROFILE
-        f128 t9 = getTimeHD_ms();  t_flush += t9 - t8;  t0 = t9;
-#endif
+        profiler_mark("draw_flush + ssaa_end_frame");
+
+        // ── Properties text (drawn AFTER SSAA resolve, directly on the
+        //     backbuffer at 1:1 so small text stays crisp instead of being
+        //     blurred by the bilinear downscale from the 1.1× offscreen). ──
+        if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.width > 0) {
+            // Property line height
+            f32 pl = 0;
+
+            // Draw the image dimensions
+            pl += draw_properties(pl, "%dx%d", ctx.current_tex.width, ctx.current_tex.height);
+
+            // Draw the file size
+            char buf[64 + 32];
+            StrFormatByteSize64(ctx.tex_fsize, buf, sizeof(buf));
+            pl += draw_properties(pl, "%s", buf);
+
+            // Draw how many channels the image has
+            pl += draw_properties(pl, "Channels: %d", ctx.tex_channels);
+
+            // Display pixelformat
+            pixel_format_to_str_s((PixelFormat) ctx.current_tex.format, buf, sizeof(buf));
+            pl += draw_properties(pl, "Format: %s", buf);
+
+            // Uggo
+            pl += draw_properties(pl, "Filter: %s",
+                                  settings.texture_filter == TEXTURE_FILTER_BILINEAR
+                                  ? "Bilinear"
+                                  : (settings.texture_filter == TEXTURE_FILTER_TRILINEAR
+                                     ? "Trilinear"
+                                     : "Point"));
+
+            pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
+            pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
+
+            // Flush the text background rects that were batched by DrawRectangle
+            // so they appear immediately rather than waiting for the next frame.
+            draw_flush();
+        }
+
+        profiler_mark("properties text");
 
         EndDrawing();
 
         // Update frame_time on the main thread (was previously set by the input thread)
         ctx.frame_time = GetFrameTime();
 
-#ifdef IMVW_PROFILE
-        f128 t10 = getTimeHD_ms();  t_present += t10 - t9;  t0 = t10;
-#endif
+        profiler_mark("EndDrawing (vsync idle)");
 
         tr_pump_messages(tr_get_state());
 
-#ifdef IMVW_PROFILE
-        f128 t11 = getTimeHD_ms();  t_pump += t11 - t10;
-        t_total += t11 - loop_entry_ms;
+        profiler_mark("tr_pump_messages");
 
-        // Print profile summary every 120 frames (~2s at 60fps)
         if (frame_count % 120 == 0) {
-            f128 n = 120.0L;
-            fprintf(stderr, "\n--- FRAME PROFILE (avg over %d frames) ---\n", 120);
-            fprintf(stderr, "  Pre-frame (python+input+state checks): %5.2Lf us\n", t_pre     * 1000.0L / n);
-            fprintf(stderr, "  Camera lerp:                           %5.2Lf us\n", t_lerp    * 1000.0L / n);
-            fprintf(stderr, "  BeginDrawing (poll_input):             %5.2Lf us\n", t_begin   * 1000.0L / n);
-            fprintf(stderr, "  process_actions:                       %5.2Lf us\n", t_actions * 1000.0L / n);
-            fprintf(stderr, "  Clear+SSAA+bg rect:                   %5.2Lf us\n", t_setup   * 1000.0L / n);
-            fprintf(stderr, "  Image drawing:                        %5.2Lf us\n", t_img     * 1000.0L / n);
-            fprintf(stderr, "  Properties text:                      %5.2Lf us\n", t_props   * 1000.0L / n);
-            fprintf(stderr, "  Custom shader pass:                   %5.2Lf us\n", t_shaders * 1000.0L / n);
-            fprintf(stderr, "  draw_flush + ssaa_end_frame:          %5.2Lf us\n", t_flush   * 1000.0L / n);
-            fprintf(stderr, "  EndDrawing (vsync idle):              %5.2Lf us\n", t_present * 1000.0L / n);
-            fprintf(stderr, "  tr_pump_messages:                     %5.2Lf us\n", t_pump    * 1000.0L / n);
-            fprintf(stderr, "  -----------------------------------------------------\n");
-            fprintf(stderr, "  Active CPU work:                       %5.2Lf us\n",
-                    (t_total - t_present - t_pump) * 1000.0L / n);
-            fprintf(stderr, "  Wall time (TOTAL):                     %5.2Lf us  (%.0Lf FPS)\n",
-                    t_total * 1000.0L / n, 1000.0L * n / t_total);
-            t_pre = t_lerp = t_begin = t_actions = t_setup = t_img = t_props = t_shaders = t_flush = t_present = t_pump = t_total = 0;
+            profiler_report(120);
         }
-#endif
     }
 
     ssaa_cleanup();

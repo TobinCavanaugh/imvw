@@ -29,8 +29,8 @@ typedef struct {
 
     u8 infinite_tile;
 
-    u8 properties_show; // TODO put in JSON
-    char *program_font_path; // TODO put in JSON
+    u8 properties_show;
+    char *program_font_path;
 
     custom_shader_t **shaders;
     u32 shader_count;

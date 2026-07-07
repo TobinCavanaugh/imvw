@@ -13,8 +13,9 @@ extern context_t ctx;
 extern settings_t settings;
 
 // Atlas cell dimensions — large enough for any GDI-rendered glyph.
-#define FALLBACK_CELL_W  16
-#define FALLBACK_CELL_H  20
+// Sampled at 3x for better quality when downscaled to display size.
+#define FALLBACK_CELL_W  48
+#define FALLBACK_CELL_H  64
 #define FALLBACK_COLS    16
 #define FALLBACK_ROWS    6
 
@@ -28,8 +29,9 @@ static void draw_text_fallback(const char *text, float x, float y,
     int a_h = ctx.fallback_atlas_h;
     if (!pix || a_w <= 0 || a_h <= 0) return;
 
+    // Scale maps the high-res atlas (64px cells) to the display font size (~12px).
+    // Sub-1.0 is expected — the larger atlas provides oversampled source pixels.
     float scale = font_size / (float)FALLBACK_CELL_H;
-    if (scale < 0.5f) scale = 0.5f;
     if (scale > 3.0f) scale = 3.0f;   // sanity cap
     int iscale = (int)(scale + 0.5f);
     if (iscale < 1) iscale = 1;
@@ -185,9 +187,11 @@ static void imvw_font_load() {
         if (rlfont.handle != NULL) {
             printf(LOG_FONT "Loaded from pre-loaded memory (handle=%p)\n", rlfont.handle);
         } else {
-            printf(LOG_FONT "LoadFontFromMemory failed (handle=NULL)\n");
+            fprintf(stderr, LOG_FONT "ERROR: LoadFontFromMemory with configured font data failed (handle=NULL)\n");
             rlfont = (Font){0};
         }
+    } else {
+        fprintf(stderr, LOG_FONT "WARNING: no pre-loaded font data — will try fallback paths\n");
     }
 
     // 2. LoadFont from well-known paths.
@@ -200,13 +204,22 @@ static void imvw_font_load() {
             "C:\\Windows\\Fonts\\consola.ttf",
             ASSETS_PATH "imvw.ttf",
         };
+        const char *labels[] = {
+            "configured path",
+            "Windows fallback (segoeui)",
+            "Windows fallback (arial)",
+            "Windows fallback (tahoma)",
+            "Windows fallback (consolas)",
+            "assets fallback (imvw.ttf)",
+        };
         for (i32 i = 0; i < 6; i++) {
             if (!paths[i]) continue;
             rlfont = LoadFont(paths[i]);
             if (rlfont.handle != NULL) {
-                printf(LOG_FONT "Loaded from `%s` (handle=%p)\n", paths[i], rlfont.handle);
+                printf(LOG_FONT "Loaded from `%s` [%s] (handle=%p)\n", paths[i], labels[i], rlfont.handle);
                 break;
             }
+            fprintf(stderr, LOG_FONT "WARNING: %s `%s` failed to load\n", labels[i], paths[i]);
         }
     }
 
@@ -219,12 +232,15 @@ static void imvw_font_load() {
     }
 
     ctx.current_font = rlfont;
-    printf(LOG_FONT "Font handle=%p  baseSize=%d\n", rlfont.handle, rlfont.baseSize);
 
     // 4. Generate GDI fallback if still no usable font.
     if (ctx.current_font.handle == NULL) {
-        printf(LOG_FONT "No usable font — generating GDI fallback atlas\n");
+        fprintf(stderr, LOG_FONT "ERROR: all font paths failed — generating GDI fallback atlas\n");
         generate_gdi_atlas();
+    } else {
+        // Font rendered at baseSize via DrawTextPro. The SSAA pass in
+        // render/ssaa.c (1.1x → bilinear downscale) provides anti-aliasing.
+        printf(LOG_FONT "Font ready: handle=%p  baseSize=%d\n", rlfont.handle, rlfont.baseSize);
     }
 }
 
