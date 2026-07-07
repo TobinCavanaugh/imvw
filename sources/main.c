@@ -69,13 +69,13 @@ context_t ctx = {
         .shaders_count = 0,
         .shaders_custom_arr = NULL
 };
-
-u8 AnyModifierDown() {
-    return IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT) ||
-           IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
-           IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
-           IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
-}
+// Pre-fetch modifier key states once per frame so per-action checks use the
+// cached values instead of calling IsKeyDown (GetAsyncKeyState) repeatedly.
+#define MOD_CTRL  (IsKeyDown(KEY_LEFT_CONTROL)  || IsKeyDown(KEY_RIGHT_CONTROL))
+#define MOD_SHIFT (IsKeyDown(KEY_LEFT_SHIFT)    || IsKeyDown(KEY_RIGHT_SHIFT))
+#define MOD_ALT   (IsKeyDown(KEY_LEFT_ALT)      || IsKeyDown(KEY_RIGHT_ALT))
+#define MOD_SUPER (IsKeyDown(KEY_LEFT_SUPER)    || IsKeyDown(KEY_RIGHT_SUPER))
+#define MOD_ANY   (MOD_CTRL || MOD_SHIFT || MOD_ALT || MOD_SUPER)
 
 // Process all registered actions once. Must be called from the main thread
 // (or any thread that also calls BeginDrawing/EndDrawing) because tr_raylib
@@ -96,6 +96,19 @@ static void process_actions(void) {
     memset(pressed_cache, 0, sizeof(pressed_cache));
     memset(down_cache, 0, sizeof(down_cache));
 
+    // Batch all modifier key states once — 8 syscalls total, regardless of
+    // how many actions reference them.
+    static u8 cached_mod_ctrl  = 0;
+    static u8 cached_mod_shift = 0;
+    static u8 cached_mod_alt   = 0;
+    static u8 cached_mod_super = 0;
+    static u8 cached_mod_any   = 0;
+    cached_mod_ctrl  = MOD_CTRL;
+    cached_mod_shift = MOD_SHIFT;
+    cached_mod_alt   = MOD_ALT;
+    cached_mod_super = MOD_SUPER;
+    cached_mod_any   = MOD_ANY;
+
     for (i32 i = 0; i < actions_count; i++) {
         key_action_t a = actions_array[i];
         u8 happened = 0;
@@ -104,9 +117,23 @@ static void process_actions(void) {
         if (a.modifier == KEY_ANY) {
             modifier_match = true;
         } else if (a.modifier != KEY_NULL) {
-            modifier_match = IsKeyDown(a.modifier);
+            // Check specific modifier from cache if it's one of the four
+            // pairs, otherwise fall through to IsKeyDown.
+            switch (a.modifier) {
+                case KEY_LEFT_CONTROL:  case KEY_RIGHT_CONTROL:
+                    modifier_match = cached_mod_ctrl;  break;
+                case KEY_LEFT_SHIFT:    case KEY_RIGHT_SHIFT:
+                    modifier_match = cached_mod_shift; break;
+                case KEY_LEFT_ALT:      case KEY_RIGHT_ALT:
+                    modifier_match = cached_mod_alt;   break;
+                case KEY_LEFT_SUPER:    case KEY_RIGHT_SUPER:
+                    modifier_match = cached_mod_super; break;
+                default:
+                    modifier_match = IsKeyDown(a.modifier);
+                    break;
+            }
         } else {
-            modifier_match = !AnyModifierDown();
+            modifier_match = !cached_mod_any;
         }
 
         if (modifier_match) {
@@ -471,17 +498,18 @@ i32 main(i32 argc, char **argv) {
     InitWindow(ld.target_w, ld.target_h, WINDOW_TITLE);
     log_step("InitWindow");
 
-    // Initialise SSAA offscreen render target (1.1× supersampling)
+    // Initialise SSAA offscreen render target.
+    // NOTE: must come AFTER pthread_join so settings (including ssaa_scale)
+    // have been loaded from the JSON config.
     {
         ID3D11Device *dev = tr_get_device(tr_get_state());
         if (dev) {
-            ssaa_init(dev);
+            ssaa_init(dev, settings.ssaa_scale);
             ssaa_resize(ld.target_w, ld.target_h, dev);
         }
     }
 
-    pthread_join(loader_thr, NULL);
-    log_step("loader_thread join");
+    log_step("loader_thread + ssaa_init join");
 
     imvw_font_load();
     log_step("  imvw_font_load");
@@ -570,14 +598,50 @@ i32 main(i32 argc, char **argv) {
 
     printf("IMVW|LOG: total_startup_time_ms: %.2Lf\n", getTimeHD_ms() - overall_start);
 
+#ifdef IMVW_PROFILE
+    // Frame timing accumulators
+    f128 t_pre     = 0, t_lerp = 0, t_begin = 0, t_actions = 0,
+         t_setup = 0, t_img  = 0, t_props   = 0, t_shaders= 0,
+         t_flush  = 0, t_present = 0, t_pump    = 0, t_total  = 0;
+#endif
+
     i32 frame_count = 0;
     f128 loop_entry_ms;
+    static u8 bg_idle = 0;
+    static u8 skip_actions = 0;
     while (!WindowShouldClose()) {
+        // When the window loses focus, render one final frame then enter a
+        // low-power idle loop that only pumps messages at 20 Hz.  This drops
+        // CPU/GPU usage to ~0% for background windows (useful with many
+        // instances open).
+        if (!ctx.focused) {
+            if (bg_idle) {
+                Sleep(50);
+                tr_pump_messages(tr_get_state());
+                continue;
+            }
+            // Don't set bg_idle here — we wait for camera lerps to converge
+            // before entering sleep (checked after the lerp section below),
+            // so background animations like Camera_Home_NoResetZoom finish
+            // smoothly before the window goes idle.
+            ctx.mouse_delta = V2f(0, 0);
+        } else {
+            if (bg_idle) {
+                // Waking from sleep: flush stale mouse state so the click
+                // that activated the window doesn't trigger pan/mouse actions
+                // (IsMouseButtonDown would return true for that click).
+                GetMouseDelta();
+                ctx.mouse_delta = V2f(0, 0);
+                skip_actions = 2;  // skip actions for 2 frames on wake
+            }
+            bg_idle = 0;
+        }
+
         loop_entry_ms = getTimeHD_ms();
         frame_count++;
-        if (frame_count % 60 == 1) {
-//            fprintf(stderr, "[%.0Lf] IMVW| frame %d begin\n", loop_entry_ms, frame_count);
-        }
+#ifdef IMVW_PROFILE
+        f128 t0 = loop_entry_ms;
+#endif
         if (settings.python_scripting) {
             python_run_script_func(python_scripts_array, python_scripts_count, "update");
         }
@@ -640,6 +704,10 @@ i32 main(i32 argc, char **argv) {
             }
         }
 
+#ifdef IMVW_PROFILE
+        f128 t1 = getTimeHD_ms();  t_pre += t1 - t0;  t0 = t1;
+#endif
+
         f32 dt = GetFrameTime();
         ctx.real_camera.offset = Vector2Lerp(ctx.real_camera.offset, ctx.target_camera.offset,
                                              dt * settings.lerpSpeed_pan);
@@ -653,10 +721,46 @@ i32 main(i32 argc, char **argv) {
         roundCamera2DValues(&ctx.real_camera, 0.001f);
         roundCamera2DValues(&ctx.target_camera, 0.001f);
 
+#ifdef IMVW_PROFILE
+        f128 t2 = getTimeHD_ms();  t_lerp += t2 - t0;  t0 = t2;
+#endif
+
+        // If unfocused but not yet asleep, check whether the camera has
+        // converged close enough to its target to safely enter the sleep
+        // loop.  We sum absolute differences across all camera components
+        // (the zoom term is scaled because it's typically ~1.0 while the
+        // others are in pixels/degrees).  This prevents the window from
+        // freezing mid-animation when the user tabs away mid-lerp.
+        if (!ctx.focused && !bg_idle) {
+            f32 drift =
+                fabs(ctx.real_camera.offset.x  - ctx.target_camera.offset.x) +
+                fabs(ctx.real_camera.offset.y  - ctx.target_camera.offset.y) +
+                fabs(ctx.real_camera.target.x  - ctx.target_camera.target.x) +
+                fabs(ctx.real_camera.target.y  - ctx.target_camera.target.y) +
+                fabs(ctx.real_camera.rotation  - ctx.target_camera.rotation) +
+                fabs(ctx.real_camera.zoom      - ctx.target_camera.zoom) * 100.0f;
+            if (drift <= 0.05f) {
+                bg_idle = 1;  // converged — sleep next iteration
+            }
+        }
+
         BeginDrawing();
+#ifdef IMVW_PROFILE
+        f128 t3 = getTimeHD_ms();  t_begin += t3 - t0;  t0 = t3;
+#endif
 
         // ── Action processing (runs after poll_input so key state is current) ──
-        process_actions();
+        // Skip actions for 2 frames after waking from background sleep so the
+        // activation click (WM_LBUTTONDOWN that regains focus) doesn't trigger
+        // Camera_PanMouse via IsMouseButtonDown.
+        if (skip_actions) {
+            skip_actions--;
+        } else {
+            process_actions();
+        }
+#ifdef IMVW_PROFILE
+        f128 t4 = getTimeHD_ms();  t_actions += t4 - t0;  t0 = t4;
+#endif
 
         // HACK: D3D11 ClearRenderTargetView alpha doesn't propagate through DWM
         // correctly for transparent windows, so we clear to transparent then draw
@@ -676,6 +780,10 @@ i32 main(i32 argc, char **argv) {
             DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), cb);
         }
         EndBlendMode();
+
+#ifdef IMVW_PROFILE
+        f128 t5 = getTimeHD_ms();  t_setup += t5 - t4;  t0 = t5;
+#endif
 
         BeginMode2D(ctx.real_camera);
         {
@@ -729,6 +837,10 @@ i32 main(i32 argc, char **argv) {
         }
         EndMode2D();
 
+#ifdef IMVW_PROFILE
+        f128 t6 = getTimeHD_ms();  t_img += t6 - t5;  t0 = t6;
+#endif
+
         if (settings.properties_show && !ctx.tex_loading && ctx.current_tex.width > 0) {
             // Property line height
             f32 pl = 0;
@@ -759,6 +871,10 @@ i32 main(i32 argc, char **argv) {
             pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
             pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
         }
+
+#ifdef IMVW_PROFILE
+        f128 t7 = getTimeHD_ms();  t_props += t7 - t6;  t0 = t7;
+#endif
 
         // --- Custom Shader Pass ---
 
@@ -796,6 +912,10 @@ i32 main(i32 argc, char **argv) {
         }
         EndBlendMode();
 
+#ifdef IMVW_PROFILE
+        f128 t8 = getTimeHD_ms();  t_shaders += t8 - t7;  t0 = t8;
+#endif
+
         // Flush any remaining batched draws to the offscreen target, then
         // restore the backbuffer and blit the offscreen → backbuffer with
         // bilinear filtering (downscales from 1.1× → 1.0× for SSAA).
@@ -803,17 +923,48 @@ i32 main(i32 argc, char **argv) {
         if (d3d_ctx && d3d_rtv)
             ssaa_end_frame(d3d_ctx, d3d_rtv, ctx.window_width, ctx.window_height);
 
+#ifdef IMVW_PROFILE
+        f128 t9 = getTimeHD_ms();  t_flush += t9 - t8;  t0 = t9;
+#endif
+
         EndDrawing();
 
         // Update frame_time on the main thread (was previously set by the input thread)
         ctx.frame_time = GetFrameTime();
 
-        if (frame_count % 60 == 1) {
-            f128 elapsed = getTimeHD_ms() - loop_entry_ms;
-//            fprintf(stderr, "[%.0Lf] IMVW| frame %d end (%.2Lf ms)\n", getTimeHD_ms(), frame_count, elapsed);
-        }
+#ifdef IMVW_PROFILE
+        f128 t10 = getTimeHD_ms();  t_present += t10 - t9;  t0 = t10;
+#endif
 
         tr_pump_messages(tr_get_state());
+
+#ifdef IMVW_PROFILE
+        f128 t11 = getTimeHD_ms();  t_pump += t11 - t10;
+        t_total += t11 - loop_entry_ms;
+
+        // Print profile summary every 120 frames (~2s at 60fps)
+        if (frame_count % 120 == 0) {
+            f128 n = 120.0L;
+            fprintf(stderr, "\n--- FRAME PROFILE (avg over %d frames) ---\n", 120);
+            fprintf(stderr, "  Pre-frame (python+input+state checks): %5.2Lf us\n", t_pre     * 1000.0L / n);
+            fprintf(stderr, "  Camera lerp:                           %5.2Lf us\n", t_lerp    * 1000.0L / n);
+            fprintf(stderr, "  BeginDrawing (poll_input):             %5.2Lf us\n", t_begin   * 1000.0L / n);
+            fprintf(stderr, "  process_actions:                       %5.2Lf us\n", t_actions * 1000.0L / n);
+            fprintf(stderr, "  Clear+SSAA+bg rect:                   %5.2Lf us\n", t_setup   * 1000.0L / n);
+            fprintf(stderr, "  Image drawing:                        %5.2Lf us\n", t_img     * 1000.0L / n);
+            fprintf(stderr, "  Properties text:                      %5.2Lf us\n", t_props   * 1000.0L / n);
+            fprintf(stderr, "  Custom shader pass:                   %5.2Lf us\n", t_shaders * 1000.0L / n);
+            fprintf(stderr, "  draw_flush + ssaa_end_frame:          %5.2Lf us\n", t_flush   * 1000.0L / n);
+            fprintf(stderr, "  EndDrawing (vsync idle):              %5.2Lf us\n", t_present * 1000.0L / n);
+            fprintf(stderr, "  tr_pump_messages:                     %5.2Lf us\n", t_pump    * 1000.0L / n);
+            fprintf(stderr, "  -----------------------------------------------------\n");
+            fprintf(stderr, "  Active CPU work:                       %5.2Lf us\n",
+                    (t_total - t_present - t_pump) * 1000.0L / n);
+            fprintf(stderr, "  Wall time (TOTAL):                     %5.2Lf us  (%.0Lf FPS)\n",
+                    t_total * 1000.0L / n, 1000.0L * n / t_total);
+            t_pre = t_lerp = t_begin = t_actions = t_setup = t_img = t_props = t_shaders = t_flush = t_present = t_pump = t_total = 0;
+        }
+#endif
     }
 
     ssaa_cleanup();

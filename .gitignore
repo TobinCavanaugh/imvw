@@ -2,7 +2,9 @@
 .vscode/
 .vs/
 cmake-build-debug/
+cmake-build-release/
 cmake-build-debug-mingw/
+cmake-build-debug-profile/
 bin/
 build/
 out/

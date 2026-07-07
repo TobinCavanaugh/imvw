@@ -62,6 +62,10 @@ u0 load_settings(cJSON *json, settings_t *out_settings) {
         if (cJSON_IsString(fp)) {
             out_settings->program_font_path = strdup(cJSON_GetStringValue(fp));
         }
+
+        // SSAA scale factor (default 1.1 if unset or <= 0)
+        f32 ss = (f32) cJSON_GetNumberValue(cJSON_GetObjectItem(settings, "ssaa_scale"));
+        out_settings->ssaa_scale = (ss > 0.0f) ? ss : 1.1f;
     }
 
     // --- NEW: Shader Loading Logic ---

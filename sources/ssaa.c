@@ -4,10 +4,6 @@
 #include <stdio.h>
 #include <float.h>
 
-// ---- Constants ------------------------------------------------------------
-
-#define SSAA_SCALE 1.10f
-
 // ---- Embedded HLSL shaders for the blit pass ------------------------------
 
 static const char *BLIT_VS_SRC =
@@ -41,8 +37,9 @@ static struct {
     ID3D11Buffer         *blit_vb;
     ID3D11SamplerState   *blit_sampler;
 
+    float scale;            // supersampling factor (set at init, never changes)
     int win_w, win_h;       // window size (logical)
-    int tex_w, tex_h;       // offscreen tex size (physical, ~1.1×)
+    int tex_w, tex_h;       // offscreen tex size (physical, ~scale ×)
     int valid;              // resources are ready
 } ss = {0};
 
@@ -66,7 +63,7 @@ static void compile_shader(const char *src, const char *target,
 
 // ---- Public API -----------------------------------------------------------
 
-void ssaa_init(ID3D11Device *device) {
+void ssaa_init(ID3D11Device *device, float scale) {
     ss.device = device;
     ss.valid  = 0;
 
@@ -127,7 +124,8 @@ void ssaa_init(ID3D11Device *device) {
     sd.MaxLOD         = FLT_MAX;
     device->lpVtbl->CreateSamplerState(device, &sd, &ss.blit_sampler);
 
-    printf("SSAA| init OK\n");
+    ss.scale = (scale > 0.0f) ? scale : 1.10f;
+    printf("SSAA| init OK (scale %.2f)\n", ss.scale);
     ss.valid = 1;
 }
 
@@ -142,8 +140,8 @@ void ssaa_resize(int window_w, int window_h, ID3D11Device *device) {
 
     if (window_w <= 0 || window_h <= 0) return;
 
-    int tw = (int)(window_w * SSAA_SCALE + 0.5f);
-    int th = (int)(window_h * SSAA_SCALE + 0.5f);
+    int tw = (int)(window_w * ss.scale + 0.5f);
+    int th = (int)(window_h * ss.scale + 0.5f);
     ss.tex_w = tw;
     ss.tex_h = th;
 
@@ -167,7 +165,7 @@ void ssaa_resize(int window_w, int window_h, ID3D11Device *device) {
     device->lpVtbl->CreateShaderResourceView(device, ss.offscreen_tex, NULL, &ss.offscreen_srv);
 
     printf("SSAA| offscreen %dx%d  (window %dx%d, scale %.2f)\n",
-           tw, th, window_w, window_h, SSAA_SCALE);
+           tw, th, window_w, window_h, ss.scale);
 }
 
 int ssaa_begin_frame(ID3D11DeviceContext *ctx, ID3D11RenderTargetView *backbuffer_rtv,
@@ -237,7 +235,7 @@ void ssaa_end_frame(ID3D11DeviceContext *ctx, ID3D11RenderTargetView *backbuffer
     ctx->lpVtbl->PSSetShaderResources(ctx, 0, 1, &null_srv);
 }
 
-float ssaa_get_scale(void) { return SSAA_SCALE; }
+float ssaa_get_scale(void) { return ss.scale; }
 
 void ssaa_cleanup() {
     if (ss.blit_sampler) { ss.blit_sampler->lpVtbl->Release(ss.blit_sampler); ss.blit_sampler = NULL; }

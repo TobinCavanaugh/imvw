@@ -130,6 +130,20 @@ target_link_libraries(${PROJECT_NAME} PRIVATE WebP::webp WebP::webpdecoder WebP:
 target_link_libraries(${PROJECT_NAME} PRIVATE WebP::libwebpmux)
 target_link_libraries(${PROJECT_NAME} PRIVATE WebP::sharpyuv)
 
+# Suppress the console window on Release builds (GUI subsystem)
+# so the executable doesn't flash a console before showing the window.
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+# Toggle ON to enable per-frame CPU profiling (timing output to stderr every ~120 frames)
+option(IMVW_PROFILE "Enable frame-by-frame CPU profiling" OFF)
+
+if(IMVW_PROFILE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE IMVW_PROFILE)
+    message(STATUS "IMVW_PROFILE is ON — frame timing data will be printed to stderr")
+endif()
+
 target_compile_definitions(${PROJECT_NAME}
         PUBLIC ASSETS_PATH="assets/"
 )

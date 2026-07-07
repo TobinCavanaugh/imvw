@@ -13,7 +13,7 @@
     "max_window_h": 640,
     "min_window_w": 160,
     "min_window_h": 160,
-    "target_fps": 60,
+    "target_fps": 999,
     "max_zoom_in": 128,
     "max_zoom_out": 1,
     "texture_filter": "TRILINEAR",
@@ -28,7 +28,8 @@
       "g": 0,
       "b": 0,
       "a": 255
-    }
+    },
+    "ssaa_scale": 1.5
   },
   "shaders": [
     {

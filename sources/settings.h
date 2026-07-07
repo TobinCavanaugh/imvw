@@ -52,6 +52,8 @@ typedef struct {
 
     Color bg_color;
     Color bg_color_alt;
+
+    f32 ssaa_scale;
 } settings_t;
 
 #endif //SETTINGS_H
