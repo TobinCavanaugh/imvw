@@ -24,7 +24,7 @@
 #define i64 int64_t
 
 #define f32 float
-#define f64 double
+typedef double f64;
 #define f128 long double
 
 // If using C11

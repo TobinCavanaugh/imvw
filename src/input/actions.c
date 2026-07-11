@@ -105,7 +105,7 @@ void process_actions(void) {
                 if (a.arg_type == ARG_TYPE_NUM) fft.func(&a.arg_num);
                 else if (a.arg_type == ARG_TYPE_BOOL) fft.func(&a.arg_bool);
                 else if (a.arg_type == ARG_TYPE_STR) fft.func(a.arg_str);
-                else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_obj);
+                else if (a.arg_type == ARG_TYPE_OBJECT) fft.func(a.arg_json_str);
             }
         } else {
             fprintf(stderr, "Could not find function of name `%s`\n", a.func);

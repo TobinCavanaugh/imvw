@@ -4,6 +4,7 @@
 
 #include <Python.h>
 #include "core/dialect.h"
+#include "external/yyjson.h"
 
 #ifndef PYTHON_LOADER_H
 #define PYTHON_LOADER_H
@@ -97,16 +98,16 @@ u0 python_run_script_func(char **python_scripts_array, i32 python_scripts_count,
     }
 }
 
-u0 load_python(cJSON *json, char ***out_scripts, i32 *out_count) {
-    cJSON *scripts = cJSON_GetObjectItem(json, "scripts");
+u0 load_python(yyjson_val *json, char ***out_scripts, i32 *out_count) {
+    yyjson_val *scripts = yyjson_obj_get(json, "scripts");
 
-    i32 size = cJSON_GetArraySize(scripts);
+    i32 size = (i32) yyjson_arr_size(scripts);
     *out_scripts = (char **) realloc(*out_scripts, sizeof(char *) * size);
     *out_count = size;
 
     i32 i = 0;
     for (; i < size; i++) {
-        char *script_path = cJSON_GetStringValue(cJSON_GetArrayItem(scripts, i));
+        char *script_path = (char*) yyjson_get_str(yyjson_arr_get(scripts, i));
         char *res = (char *) (malloc(strlen(script_path) + 1));
         strcpy(res, script_path);
 

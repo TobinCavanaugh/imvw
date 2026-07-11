@@ -3,6 +3,7 @@
 .vs/
 cmake-build-debug/
 cmake-build-release/
+cmake-build-release-mingw/
 cmake-build-debug-mingw/
 cmake-build-debug-profile/
 bin/

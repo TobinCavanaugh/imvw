@@ -51,7 +51,8 @@ if(MSVC)
 else()
     set(CMAKE_C_FLAGS "-Wall -Wextra")
     set(CMAKE_C_FLAGS_DEBUG "-g")
-    set(CMAKE_C_FLAGS_RELEASE "-O3")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -s -ffunction-sections -fdata-sections")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-Wl,--gc-sections")
 endif()
 
 include(FetchContent)
@@ -72,7 +73,6 @@ set(ZLIB_USE_STATIC_LIBS ON)
 find_package(WebP CONFIG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(JPEG REQUIRED)
 find_package(LibLZMA REQUIRED)
 find_package(Python REQUIRED COMPONENTS Development)
 
@@ -124,8 +124,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         Python::Python
         winmm
         shlwapi
+        comdlg32
         TIFF::TIFF
-        JPEG::JPEG
         LibLZMA::LibLZMA
         ws2_32
         ZLIB::ZLIB
@@ -156,6 +156,10 @@ endif()
 
 target_compile_definitions(${PROJECT_NAME}
         PUBLIC ASSETS_PATH="assets/"
+        PRIVATE
+        YYJSON_DISABLE_INCR_READER=1
+        YYJSON_DISABLE_UTILS=1
+        YYJSON_DISABLE_FAST_FP_CONV=1
 )
 
 set(ASSETS_DEST "${CMAKE_BINARY_DIR}/bin/assets")

@@ -23,6 +23,8 @@ context_t ctx = {
     },
     .current_path = "",
     .current_window_title = "",
+    .font_need_reload = 0,
+    .shaders_need_reload = 0,
     .shaders_loaded_arr = NULL,
     .shaders_count = 0,
     .shaders_custom_arr = NULL,

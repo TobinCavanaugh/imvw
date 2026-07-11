@@ -6,8 +6,7 @@
 
 #include "core/platform/dirent_win32.h"
 #include <external/stb_image.h>
-#include <external/tinyfiledialogs.h>
-//#include "image_decoder.h"
+#include <commdlg.h>
 
 #include "utils/slfile.h"
 
@@ -289,16 +288,36 @@ u0 Open_File_Dialog() {
     }
     strcat(description, ")");
 
-    char *out = tinyfd_openFileDialog(
-            "Select an image file",
-            NULL,
-            numFilters,
-            lFilterPatterns,
-            description,
-            0);
+    // Build combined pattern string: "*.png;*.jpg;*.jpeg;..."
+    char allPatterns[256] = {0};
+    for (int i = 0; i < numFilters; i++) {
+        if (i > 0) strcat(allPatterns, ";");
+        strcat(allPatterns, lFilterPatterns[i]);
+    }
 
-    if (out && strlen(out) > 0) {
-        Load(out);
+    // Build GetOpenFileNameA filter string:
+    // "Description\0Pattern\0All Files\0*.*\0\0"
+    char filter[1024] = {0};
+    char *fp = filter;
+    size_t desclen = strlen(description);
+    memcpy(fp, description, desclen); fp += desclen + 1;
+    size_t patlen = strlen(allPatterns);
+    memcpy(fp, allPatterns, patlen); fp += patlen + 1;
+    memcpy(fp, "All Files", 9); fp += 10;
+    memcpy(fp, "*.*", 3); fp += 4;
+
+    char szFile[MAX_PATH] = {0};
+    OPENFILENAMEA ofn = {0};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = (HWND) GetWindowHandle();
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = "Select an image file";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (GetOpenFileNameA(&ofn)) {
+        Load(szFile);
         Camera_Home_ResetZoom();
     }
 }

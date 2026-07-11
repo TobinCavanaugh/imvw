@@ -185,6 +185,22 @@ void imvw_main_loop(void) {
                 imvw_tex_load();
             }
 
+            // Lazy reload font after driver upgrade (load fails inside the callback)
+            if (ctx.font_need_reload && ctx.current_font.handle == NULL) {
+                imvw_font_load();
+                if (ctx.current_font.handle != NULL) {
+                    ctx.font_need_reload = 0;
+                    fprintf(stderr, "IMVW|LOG: Font re-loaded after driver upgrade\n");
+                }
+            }
+
+            // Lazy reload custom shaders after driver upgrade
+            if (ctx.shaders_need_reload) {
+                load_custom_shaders();
+                ctx.shaders_need_reload = 0;
+                fprintf(stderr, "IMVW|LOG: Shaders re-loaded after driver upgrade\n");
+            }
+
             if (ctx.img_ready_to_upload) {
                 if (ctx.current_tex.id != 0) UnloadTexture(ctx.current_tex);
                 ctx.current_tex = LoadTextureFromImage(ctx.loading_img);
@@ -289,6 +305,12 @@ void imvw_main_loop(void) {
 
             pl += draw_properties(pl, "%.2fms", ctx.frame_time * 1000.);
             pl += draw_properties(pl, "%.2ffps ", 1. / ctx.frame_time);
+
+            {
+                TRDriverMode dm = tr_get_driver_mode(tr_get_state());
+                const char *driver_str = (dm == TR_DRIVER_HARDWARE) ? "GPU" : "WARP";
+                pl += draw_properties(pl, "Renderer: %s", driver_str);
+            }
 
             draw_flush();
         }

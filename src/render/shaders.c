@@ -22,9 +22,10 @@ void load_custom_shaders() {
     if (ctx.shaders_custom_arr != NULL) {
         for (i32 i = 0; i < ctx.shaders_count; i++) {
             custom_shader_t t = ctx.shaders_custom_arr[i];
-            free(t.name);
-            if (t.vs_path) free(t.vs_path);
-            if (t.fs_path) free(t.fs_path);
+            // NOTE: name/vs_path/fs_path are shallow-copied from
+            // settings.shaders[i] during init, so we must NOT free them here
+            // (they are owned by settings for the app's lifetime).
+            (void)t;
         }
         free(ctx.shaders_custom_arr);
         ctx.shaders_custom_arr = NULL;

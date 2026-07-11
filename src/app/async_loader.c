@@ -9,7 +9,7 @@
 #include "ui/font.h"
 #include "input/actions.h"
 #include "external/stb_image.h"
-#include "external/cJSON.h"
+#include "external/yyjson.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,15 +38,17 @@ void *async_loader(void *arg) {
     imvw_init_loaders();
 
     char *json_text = load_file_text(ASSETS_PATH"imvw.json");
-    cJSON *json_data = json_text ? cJSON_Parse(json_text) : NULL;
+    yyjson_doc *doc = json_text ? yyjson_read(json_text, strlen(json_text),
+        YYJSON_READ_ALLOW_COMMENTS | YYJSON_READ_ALLOW_TRAILING_COMMAS) : NULL;
     if (json_text) free(json_text);
 
-    if (json_data) {
-        load_actions(json_data, &actions_array, &actions_count);
-        load_settings(json_data, &settings);
+    if (doc) {
+        yyjson_val *root = yyjson_doc_get_root(doc);
+        load_actions(root, &actions_array, &actions_count);
+        load_settings(root, &settings);
         if (settings.python_scripting) {
             Enable_Python();
-            load_python(json_data, &python_scripts_array, &python_scripts_count);
+            load_python(root, &python_scripts_array, &python_scripts_count);
         }
 
         // Pre-load shaders into memory
@@ -69,7 +71,7 @@ void *async_loader(void *arg) {
         // Pre-load font into memory
         char *font_path = settings.program_font_path;
         if (!font_path || !strlen(font_path)) {
-            fprintf(stderr, "IMVW|FONT: no program_font_path in config — falling back to assets\\segoeui.ttf\n");
+            fprintf(stderr, "IMVW|FONT: no program_font_path in config \x97 falling back to assets\\segoeui.ttf\n");
             font_path = "assets\\segoeui.ttf";
         }
         FILE *f = fopen(font_path, "rb");
@@ -81,10 +83,10 @@ void *async_loader(void *arg) {
             fread(ctx.font_data, 1, ctx.font_data_size, f);
             fclose(f);
         } else {
-            fprintf(stderr, "IMVW|FONT: ERROR — could not open `%s` for font pre-load\n", font_path);
+            fprintf(stderr, "IMVW|FONT: ERROR \x97 could not open `%s` for font pre-load\n", font_path);
         }
 
-        cJSON_Delete(json_data);
+        yyjson_doc_free(doc);
     }
 
     ld->config_ready = 1;
@@ -134,6 +136,21 @@ void *async_loader(void *arg) {
         ld->target_h = 450;
     }
     ld->size_ready = 1;
+
+    // Decode the full image while the main thread creates the window.
+    // Write directly into ctx so the result survives even if the main thread
+    // has already moved past the img_decoded check by the time we finish.
+    // Guard: if the main thread already spawned its own decode (tex_loading),
+    // skip to avoid overwriting its result mid-flight.
+    if (!ctx.tex_loading && !ctx.img_ready_to_upload) {
+        ctx.loading_img = imvw_load_image_extended(initial_path);
+        if (ctx.loading_img.width == 0 || ctx.loading_img.data == NULL) {
+            fprintf(stderr, "IMVW|LOADER: failed to decode `%s` \x97 using magenta dummy\n", initial_path);
+            ctx.loading_img = GenImageColor(2, 2, MAGENTA);
+        }
+        ctx.img_ready_to_upload = 1;
+    }
+    ld->img_decoded = 1;
 
     return NULL;
 }
