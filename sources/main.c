@@ -262,6 +262,7 @@ static f128 last_timestamp = 0;
 void log_step(const char *name) {
     f128 current = getTimeHD_ms();
     printf("IMVW|PROF: %-30s | %8.2Lf ms\n", name, current - last_timestamp);
+    fflush(stdout);
     last_timestamp = current;
 }
 
@@ -288,7 +289,56 @@ static char *load_file_text(const char *path) {
 }
 
 void *async_loader(void *arg) {
+    f128 t0 = getTimeHD_ms();
     loader_data_t *ld = (loader_data_t *) arg;
+
+    // Fast path: get image dimensions first so main thread doesn't wait
+    char initial_path[MAX_PATH] = {0};
+    if (ld->argc > 1) {
+        for (int i = 1; i < ld->argc; i++) strcat(initial_path, ld->argv[i]);
+    } else {
+        strcpy(initial_path, ASSETS_PATH "test2.png");
+    }
+
+    int img_w, img_h, img_c;
+    if (stbi_info(initial_path, &img_w, &img_h, &img_c)) {
+        // Calculate aspect ratio and window size
+        f32 aspect = (f32) img_w / (f32) img_h;
+        f32 sw = 640.0f; // sensible defaults before json
+        f32 sh = 640.0f;
+        f32 mw = 160.0f;
+        f32 mh = 160.0f;
+
+        f32 target_w = (f32) img_w;
+        f32 target_h = (f32) img_h;
+
+        if (target_w >= sw || target_h >= sh) {
+            if (target_w >= target_h) {
+                target_w = sw;
+                target_h = sw / aspect;
+            } else {
+                target_h = sh;
+                target_w = sh * aspect;
+            }
+        }
+        if (target_w <= mw || target_h <= mh) {
+            if (target_w >= target_h) {
+                target_w = mw;
+                target_h = mw / aspect;
+            } else {
+                target_h = mh;
+                target_w = mh * aspect;
+            }
+        }
+        ld->target_w = (int) target_w;
+        ld->target_h = (int) target_h;
+    } else {
+        ld->target_w = SCREEN_WIDTH;
+        ld->target_h = SCREEN_HEIGHT;
+    }
+    ld->size_ready = 1;
+    f128 t_size = getTimeHD_ms();
+    printf("IMVW|PROF: [async_thr] stbi_info & size_ready | %8.2Lf ms\n", t_size - t0);
 
     imvw_init_loaders();
 
@@ -300,8 +350,11 @@ void *async_loader(void *arg) {
         load_actions(json_data, &actions_array, &actions_count);
         load_settings(json_data, &settings);
         if (settings.python_scripting) {
+            f128 t_py0 = getTimeHD_ms();
             Enable_Python();
             load_python(json_data, &python_scripts_array, &python_scripts_count);
+            f128 t_py1 = getTimeHD_ms();
+            printf("IMVW|PROF: [async_thr] Py_Initialize + scripts | %8.2Lf ms\n", t_py1 - t_py0);
         }
 
         // Pre-load shaders into memory
@@ -338,52 +391,8 @@ void *async_loader(void *arg) {
     }
 
     ld->config_ready = 1;
-
-    // Determine initial image path to get dimensions
-    char initial_path[MAX_PATH] = {0};
-    if (ld->argc > 1) {
-        for (int i = 1; i < ld->argc; i++) strcat(initial_path, ld->argv[i]);
-    } else {
-        strcpy(initial_path, ASSETS_PATH "test2.png");
-    }
-
-    int img_w, img_h, img_c;
-    if (stbi_info(initial_path, &img_w, &img_h, &img_c)) {
-        // Calculate aspect ratio and window size
-        f32 aspect = (f32) img_w / (f32) img_h;
-        f32 sw = settings.max_window_w;
-        f32 sh = settings.max_window_h;
-        f32 mw = settings.min_window_w;
-        f32 mh = settings.min_window_h;
-
-        f32 target_w = (f32) img_w;
-        f32 target_h = (f32) img_h;
-
-        if (target_w >= sw || target_h >= sh) {
-            if (target_w >= target_h) {
-                target_w = sw;
-                target_h = sw / aspect;
-            } else {
-                target_h = sh;
-                target_w = sh * aspect;
-            }
-        }
-        if (target_w <= mw || target_h <= mh) {
-            if (target_w >= target_h) {
-                target_w = mw;
-                target_h = mw / aspect;
-            } else {
-                target_h = mh;
-                target_w = mh * aspect;
-            }
-        }
-        ld->target_w = (int) target_w;
-        ld->target_h = (int) target_h;
-    } else {
-        ld->target_w = SCREEN_WIDTH;
-        ld->target_h = SCREEN_HEIGHT;
-    }
-    ld->size_ready = 1;
+    f128 t_done = getTimeHD_ms();
+    printf("IMVW|PROF: [async_thr] async_loader TOTAL      | %8.2Lf ms\n", t_done - t0);
 
     return NULL;
 }
@@ -394,6 +403,9 @@ void *python_startup_thread(void *arg) {
 }
 
 i32 main(i32 argc, char **argv) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
     // Enable precision timers on Windows to make Sleep(1) actually 1ms
     timeBeginPeriod(1);
 
@@ -407,6 +419,18 @@ i32 main(i32 argc, char **argv) {
     pthread_create(&loader_thr, NULL, async_loader, &ld);
 
     // Initialize GLFW explicitly to overlap with async_loader
+
+    glfwInitHint(GLFW_JOYSTICK_HAT_BUTTONS, GLFW_FALSE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
+
+//    SetProcessDPIAwareContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    SetProcessDPIAware();
+    // glfwWindowHint(GLFW_WIN32_MESSAGES_IN_FIBER, GLFW_FALSE); // Use of undeclared identifier 'GLFW_WIN32_MESSAGES_IN_FIBER'
+
+    log_step("GLFW Hints");
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
         return -1;
@@ -414,21 +438,23 @@ i32 main(i32 argc, char **argv) {
     log_step("glfwInit");
 
     // Disable joystick to prevent 300ms delays on Windows
-    glfwInitHint(GLFW_JOYSTICK_HAT_BUTTONS, GLFW_FALSE);
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
-    log_step("GLFW Hints");
 
     // Wait briefly for size metadata, but don't hang if it's slow
+    f128 t_wait_start = getTimeHD_ms();
     int timeout = 100; // ms
     while (!ld.size_ready && timeout-- > 0) Sleep(1);
+    f128 t_wait_end = getTimeHD_ms();
+    printf("IMVW|PROF: [main_thr]  size_ready wait time     | %8.2Lf ms\n", t_wait_end - t_wait_start);
+    last_timestamp = t_wait_end;
 
     SetExitKey(KEY_NULL);
     SetTraceLogLevel(LOG_WARNING);
-    SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
+
+    // Transparency is important to the program
+    SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE);
+    // SetConfigFlags(FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
+
     InitWindow(ld.target_w, ld.target_h, WINDOW_TITLE);
     log_step("InitWindow");
 
@@ -507,7 +533,11 @@ i32 main(i32 argc, char **argv) {
 
     printf("IMVW|LOG: total_startup_time_ms: %.2Lf\n", getTimeHD_ms() - overall_start);
 
+    int bench_mode = (argc > 1 && strcmp(argv[1], "--bench") == 0);
+    int frame_count = 0;
+
     while (!WindowShouldClose()) {
+        if (bench_mode && ++frame_count > 5) break;
         if (settings.python_scripting) {
             python_run_script_func(python_scripts_array, python_scripts_count, "update");
         }
