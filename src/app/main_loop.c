@@ -208,25 +208,60 @@ void imvw_main_loop(void) {
                 fprintf(stderr, "IMVW|LOG: Shaders re-loaded after driver upgrade\n");
             }
 
-            if (ctx.img_ready_to_upload) {
-                if (ctx.current_tex.id != 0) UnloadTexture(ctx.current_tex);
-                if (ctx.active_image.data != NULL && ctx.active_image.data != ctx.loading_img.data) {
-                    UnloadImage(ctx.active_image);
+            // 1. Process async thumbnail upload if ready and full image hasn't been uploaded yet
+            if (ctx.thumb_ready_to_upload) {
+                uint64_t req = ctx.thumb_req_id;
+                Image thumb = ctx.thumb_img;
+                ctx.thumb_img = (Image){0};
+                ctx.thumb_ready_to_upload = 0;
+
+                if (req == ctx.load_request_id && !ctx.img_uploaded && thumb.data != NULL) {
+                    if (ctx.current_tex.id != 0) UnloadTexture(ctx.current_tex);
+                    if (ctx.active_image.data != NULL) UnloadImage(ctx.active_image);
+
+                    int orig_w = ctx.current_tex.width;
+                    int orig_h = ctx.current_tex.height;
+
+                    ctx.current_tex = LoadTextureFromImage(thumb);
+                    SetTextureFilter(ctx.current_tex, settings.texture_filter);
+
+                    if (orig_w > 0 && orig_h > 0) {
+                        ctx.current_tex.width = orig_w;
+                        ctx.current_tex.height = orig_h;
+                    }
+                    ctx.active_image = thumb;
+                } else {
+                    if (thumb.data) UnloadImage(thumb);
                 }
-                ctx.current_tex = LoadTextureFromImage(ctx.loading_img);
-                GenTextureMipmaps(&ctx.current_tex);
-                SetTextureFilter(ctx.current_tex, settings.texture_filter);
-                ctx.active_image = ctx.loading_img;
+            }
+
+            // 2. Process async full-resolution image upload
+            if (ctx.img_ready_to_upload) {
+                uint64_t req = ctx.img_req_id;
+                Image decoded = ctx.loading_img;
                 ctx.loading_img = (Image){0};
                 ctx.img_ready_to_upload = 0;
-                ctx.tex_need_load = 0;
-                ctx.tex_need_filter = 0;
-                Camera_FitWindow();
 
-                u8 t = true;
-                Camera_Home_Internal(&t);
-                if (frame_count <= 2) {
-                    ctx.real_camera = ctx.target_camera;
+                if (req == ctx.load_request_id && decoded.data != NULL) {
+                    if (ctx.current_tex.id != 0) UnloadTexture(ctx.current_tex);
+                    if (ctx.active_image.data != NULL) UnloadImage(ctx.active_image);
+
+                    ctx.current_tex = LoadTextureFromImage(decoded);
+                    GenTextureMipmaps(&ctx.current_tex);
+                    SetTextureFilter(ctx.current_tex, settings.texture_filter);
+                    ctx.active_image = decoded;
+                    ctx.img_uploaded = 1;
+                    ctx.tex_need_load = 0;
+                    ctx.tex_need_filter = 0;
+                    Camera_FitWindow();
+
+                    u8 t = true;
+                    Camera_Home_Internal(&t);
+                    if (frame_count <= 2) {
+                        ctx.real_camera = ctx.target_camera;
+                    }
+                } else {
+                    if (decoded.data) UnloadImage(decoded);
                 }
             }
 

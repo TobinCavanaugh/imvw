@@ -94,22 +94,16 @@ u0 Load(char *path) {
         UnloadImage(ctx.loading_img);
         ctx.loading_img = (Image){0};
     }
+    if (ctx.thumb_img.data != NULL) {
+        UnloadImage(ctx.thumb_img);
+        ctx.thumb_img = (Image){0};
+    }
     ctx.img_ready_to_upload = 0;
+    ctx.thumb_ready_to_upload = 0;
+    ctx.img_uploaded = 0;
 
     int w = 0, h = 0, c = 0;
     stbi_info(path, &w, &h, &c);
-
-    // Try to load Windows Shell thumbnail immediately for instant preview while full image decodes in background
-    Image thumb = imvw_get_thumbnail(path, 1024, 1024);
-    if (thumb.data != NULL) {
-        ctx.current_tex = LoadTextureFromImage(thumb);
-        SetTextureFilter(ctx.current_tex, settings.texture_filter);
-        if (w == 0 || h == 0) {
-            w = thumb.width;
-            h = thumb.height;
-        }
-        ctx.active_image = thumb;
-    }
 
     ctx.current_tex.width = (w > 0) ? w : 1;
     ctx.current_tex.height = (h > 0) ? h : 1;
