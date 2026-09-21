@@ -70,11 +70,24 @@ void *async_loader(void *arg) {
 
         // Pre-load font into memory
         char *font_path = settings.program_font_path;
-        if (!font_path || !strlen(font_path)) {
-            fprintf(stderr, "IMVW|FONT: no program_font_path in config \x97 falling back to assets\\segoeui.ttf\n");
-            font_path = "assets\\segoeui.ttf";
+        FILE *f = NULL;
+        if (font_path && strlen(font_path)) {
+            f = fopen(font_path, "rb");
         }
-        FILE *f = fopen(font_path, "rb");
+        if (!f) {
+            char asset_font_path[512];
+            snprintf(asset_font_path, sizeof(asset_font_path), "%s%s", ASSETS_PATH, "segoeui.ttf");
+            const char *fallback_paths[] = {
+                asset_font_path,
+                "assets\\segoeui.ttf",
+                "C:\\Windows\\Fonts\\segoeui.ttf",
+                "C:\\Windows\\Fonts\\arial.ttf"
+            };
+            for (size_t i = 0; i < sizeof(fallback_paths)/sizeof(fallback_paths[0]); i++) {
+                f = fopen(fallback_paths[i], "rb");
+                if (f) break;
+            }
+        }
         if (f) {
             fseek(f, 0, SEEK_END);
             ctx.font_data_size = (int) ftell(f);
@@ -83,7 +96,7 @@ void *async_loader(void *arg) {
             fread(ctx.font_data, 1, ctx.font_data_size, f);
             fclose(f);
         } else {
-            fprintf(stderr, "IMVW|FONT: ERROR \x97 could not open `%s` for font pre-load\n", font_path);
+            fprintf(stderr, "IMVW|FONT: ERROR \x97 could not locate a font file for font pre-load\n");
         }
 
         yyjson_doc_free(doc);

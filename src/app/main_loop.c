@@ -214,6 +214,9 @@ void imvw_main_loop(void) {
 
                 u8 t = true;
                 Camera_Home_Internal(&t);
+                if (frame_count <= 2) {
+                    ctx.real_camera = ctx.target_camera;
+                }
             }
 
             if (ctx.tex_need_filter && !ctx.tex_loading && !ctx.tex_need_load) {
@@ -310,6 +313,12 @@ void imvw_main_loop(void) {
                 TRDriverMode dm = tr_get_driver_mode(tr_get_state());
                 const char *driver_str = (dm == TR_DRIVER_HARDWARE) ? "GPU" : "WARP";
                 pl += draw_properties(pl, "Renderer: %s", driver_str);
+            }
+
+            {
+                char settings_path[MAX_PATH] = {0};
+                GetFullPathNameA(ASSETS_PATH "imvw.json", MAX_PATH, settings_path, NULL);
+                pl += draw_properties(pl, "Settings: %s", settings_path);
             }
 
             draw_flush();

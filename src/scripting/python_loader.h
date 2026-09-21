@@ -53,13 +53,19 @@ static u0 scripts_add(char *name) {
         return;
     }
 
-    PyObject *pyname = PyUnicode_FromString(full_path);
+    // Ensure script search paths are in sys.path
+    PyRun_SimpleString("import sys, os\n"
+                       "for p in ['.', 'assets', './assets']:\n"
+                       "    if os.path.exists(p) and p not in sys.path:\n"
+                       "        sys.path.insert(0, p)\n");
+
+    PyObject *pyname = PyUnicode_FromString(name);
     PyObject *mod = PyImport_Import(pyname);
     Py_DECREF(pyname);
 
     if (!mod) {
         PyErr_Print();
-        ERR_PY("Failed to import script `%s` into Python runtime", full_path)
+        ERR_PY("Failed to import script `%s` into Python runtime", name)
         return;
     }
 

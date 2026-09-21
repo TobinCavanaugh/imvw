@@ -89,6 +89,32 @@ static void on_driver_upgrade(TRState *s) {
 }
 
 void imvw_init(int argc, char **argv) {
+    // ── Resolve relative input path & set working directory to executable folder ──
+    // When launched via Windows file association, CWD is the image directory or System32.
+    // Converting argv to an absolute path and switching CWD ensures assets (imvw.json, fonts, shaders) are always found.
+    if (argc > 1) {
+        char full_arg[MAX_PATH] = {0};
+        char joined_arg[MAX_PATH] = {0};
+        for (int i = 1; i < argc; i++) {
+            if (i > 1 && (strlen(joined_arg) + 1 < MAX_PATH)) strcat(joined_arg, " ");
+            strncat(joined_arg, argv[i], sizeof(joined_arg) - strlen(joined_arg) - 1);
+        }
+        if (GetFullPathNameA(joined_arg, MAX_PATH, full_arg, NULL)) {
+            argv[1] = _strdup(full_arg);
+            argc = 2;
+        }
+    }
+
+    char exe_path[MAX_PATH];
+    if (GetModuleFileNameA(NULL, exe_path, sizeof(exe_path))) {
+        char *last_slash = strrchr(exe_path, '\\');
+        if (!last_slash) last_slash = strrchr(exe_path, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            SetCurrentDirectoryA(exe_path);
+        }
+    }
+
     // ── DPI awareness (must be set before any window creation) ──
     {
         HMODULE hUser32 = GetModuleHandleA("user32.dll");
@@ -278,7 +304,11 @@ void imvw_init(int argc, char **argv) {
     }
     log_step("Initial Load (Load call)");
 
+    ctx.window_width = ld.target_w;
+    ctx.window_height = ld.target_h;
+
     Camera_Home_ResetZoom();
+    ctx.real_camera = ctx.target_camera;
 
     // If the async_loader already decoded the image (into ctx.loading_img),
     // suppress the separate decode thread that Load() would trigger.

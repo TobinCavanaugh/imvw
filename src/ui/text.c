@@ -20,8 +20,8 @@ f32 get_system_font_size() {
 f32 draw_properties(f32 properties_line, char *format, ...) {
     va_list args;
     va_start(args, format);
-    static char properties_working[PATH_MAX];
-    vsnprintf(properties_working, PATH_MAX, format, args);
+    static char properties_working[1024];
+    vsnprintf(properties_working, sizeof(properties_working) - 4, format, args);
     va_end(args);
 
     memmove(properties_working + 1, properties_working, strlen(properties_working) + 1);
