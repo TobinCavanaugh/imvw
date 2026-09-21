@@ -5,6 +5,8 @@
 #include "imvw_interface.h"
 
 #include "core/platform/dirent_win32.h"
+#include "image/decoders.h"
+#include "image/tex_loader.h"
 #include <external/stb_image.h>
 #include <commdlg.h>
 
@@ -14,8 +16,6 @@
 // TODO DUPLICATED SHIFT_FINE
 #define SHIFT_DOWN ( (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) )
 #define SHIFT_FINE ( SHIFT_DOWN ? 0.5f : 1.0f )
-
-#define SPIN_IF_TEX_LOADING while(ctx.tex_loading || ctx.tex_need_load) { Sleep(16); }
 
 v2f CalculateWindowSize() {
     f32 aspect_ratio = (f32) ctx.current_tex.width / (f32) ctx.current_tex.height;
@@ -77,34 +77,55 @@ u0 Camera_FitWindow() {
 }
 
 u0 Load(char *path) {
-
-    // TODO FIX THIS
     strcpy(ctx.current_path, path);
     strcpy(ctx.current_window_title, "imvw | ");
     strcat(ctx.current_window_title, ctx.current_path);
 
-    ctx.tex_need_load = 1;
-
-    // Use metadata for initial dimensions if possible to avoid window flickering
-    int w, h, c;
-    if (stbi_info(path, &w, &h, &c)) {
-        ctx.current_tex.width = w;
-        ctx.current_tex.height = h;
-        ctx.tex_channels = c;
-    } else {
-        ctx.current_tex.width = 1;
-        ctx.current_tex.height = 1;
-        ctx.tex_channels = 1;
+    // Unload the old texture immediately so we don't display the old photo stretched to the new photo's dimensions
+    if (ctx.current_tex.id != 0) {
+        UnloadTexture(ctx.current_tex);
+        ctx.current_tex = (Texture2D){0};
     }
+    if (ctx.active_image.data != NULL) {
+        UnloadImage(ctx.active_image);
+        ctx.active_image = (Image){0};
+    }
+    if (ctx.loading_img.data != NULL) {
+        UnloadImage(ctx.loading_img);
+        ctx.loading_img = (Image){0};
+    }
+    ctx.img_ready_to_upload = 0;
+
+    int w = 0, h = 0, c = 0;
+    stbi_info(path, &w, &h, &c);
+
+    // Try to load Windows Shell thumbnail immediately for instant preview while full image decodes in background
+    Image thumb = imvw_get_thumbnail(path, 1024, 1024);
+    if (thumb.data != NULL) {
+        ctx.current_tex = LoadTextureFromImage(thumb);
+        SetTextureFilter(ctx.current_tex, settings.texture_filter);
+        if (w == 0 || h == 0) {
+            w = thumb.width;
+            h = thumb.height;
+        }
+        ctx.active_image = thumb;
+    }
+
+    ctx.current_tex.width = (w > 0) ? w : 1;
+    ctx.current_tex.height = (h > 0) ? h : 1;
+    ctx.tex_channels = (c > 0) ? c : 4;
 
     struct _stat info;
     ctx.tex_fsize = (_stat(ctx.current_path, &info) == 0) ? info.st_size : 0;
 
     // Fit window based on initial dimensions
     Camera_FitWindow();
+    Camera_Home_ResetZoom();
+    ctx.real_camera = ctx.target_camera;
 
     // Trigger the background thread in tex_loader.h
     ctx.tex_need_load = 1;
+    imvw_tex_load();
 
     SetWindowTitle(ctx.current_window_title);
 }
@@ -730,8 +751,6 @@ u0 open_sib_iterate(slfile_t *file) {
 }
 
 u0 Open_Sibling(f32 *direction) {
-    SPIN_IF_TEX_LOADING;
-
     char dir[MAX_PATH];
     GetFullPathName(ctx.current_path, MAX_PATH, dir, NULL);
 

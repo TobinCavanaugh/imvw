@@ -28,4 +28,7 @@ void imvw_init_loaders(void);
 // stb_image.  Returns a zeroed Image on failure.
 Image imvw_load_image_extended(const char *filepath);
 
+// Extract fast Windows Shell thumbnail if cached by the OS. Returns zeroed Image on failure.
+Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h);
+
 #endif // IMAGE_DECODERS_H

@@ -264,3 +264,115 @@ Image imvw_load_image_extended(const char *filepath) {
     free(file_data);
     return img;
 }
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+
+static const IID IID_IShellItemImageFactory_thumb = {
+    0xbcc18b79, 0xba16, 0x442f, { 0x80, 0xc4, 0x8a, 0x14, 0x0f, 0x4a, 0x11, 0x4b }
+};
+
+Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h) {
+    Image img = {0};
+    if (!filepath || !filepath[0]) return img;
+
+    wchar_t raw_wpath[MAX_PATH];
+    if (MultiByteToWideChar(CP_UTF8, 0, filepath, -1, raw_wpath, MAX_PATH) == 0) {
+        MultiByteToWideChar(CP_ACP, 0, filepath, -1, raw_wpath, MAX_PATH);
+    }
+    for (wchar_t *p = raw_wpath; *p; p++) {
+        if (*p == L'/') *p = L'\\';
+    }
+    wchar_t wpath[MAX_PATH];
+    if (GetFullPathNameW(raw_wpath, MAX_PATH, wpath, NULL) == 0) {
+        wcsncpy(wpath, raw_wpath, MAX_PATH);
+    }
+
+    IShellItemImageFactory *factory = NULL;
+    HRESULT hr = SHCreateItemFromParsingName(wpath, NULL, &IID_IShellItemImageFactory_thumb, (void**)&factory);
+    if (FAILED(hr) || !factory) {
+        // Fallback: try raw_wpath directly
+        hr = SHCreateItemFromParsingName(raw_wpath, NULL, &IID_IShellItemImageFactory_thumb, (void**)&factory);
+        if (FAILED(hr) || !factory) return img;
+    }
+
+    if (max_w <= 0) max_w = 1024;
+    if (max_h <= 0) max_h = 1024;
+    SIZE size = { (LONG)max_w, (LONG)max_h };
+
+    HBITMAP hbmp = NULL;
+    // SIIGBF_RESIZETOFIT (0x00) shrinks/fits thumbnail preserving aspect ratio
+    hr = factory->lpVtbl->GetImage(factory, size, 0x00 /*SIIGBF_RESIZETOFIT*/, &hbmp);
+    if (FAILED(hr) || !hbmp) {
+        hr = factory->lpVtbl->GetImage(factory, size, 0x01 /*SIIGBF_BIGGERSIZEOK*/, &hbmp);
+    }
+    if (FAILED(hr) || !hbmp) {
+        hr = factory->lpVtbl->GetImage(factory, size, 0x08 /*SIIGBF_THUMBNAILONLY*/, &hbmp);
+    }
+    factory->lpVtbl->Release(factory);
+
+    if (FAILED(hr) || !hbmp) return img;
+
+    BITMAP bm;
+    if (GetObject(hbmp, sizeof(BITMAP), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+        BITMAPINFO bi = {0};
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = bm.bmWidth;
+        bi.bmiHeader.biHeight = bm.bmHeight; // Must be positive for GetDIBits!
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+
+        HDC hdc = GetDC(NULL);
+        u8 *raw_dib = (u8*)malloc((size_t)bm.bmWidth * bm.bmHeight * 4);
+        u8 *pixels  = (u8*)malloc((size_t)bm.bmWidth * bm.bmHeight * 4);
+        if (raw_dib && pixels) {
+            if (GetDIBits(hdc, hbmp, 0, bm.bmHeight, raw_dib, &bi, DIB_RGB_COLORS)) {
+                // Check if any pixel has non-zero alpha
+                int has_alpha = 0;
+                for (int i = 0; i < bm.bmWidth * bm.bmHeight; i++) {
+                    if (raw_dib[i * 4 + 3] > 0) {
+                        has_alpha = 1;
+                        break;
+                    }
+                }
+
+                // DIB is bottom-up; invert Y and convert BGRA -> RGBA
+                for (int y = 0; y < bm.bmHeight; y++) {
+                    int src_row = bm.bmHeight - 1 - y;
+                    for (int x = 0; x < bm.bmWidth; x++) {
+                        u8 *src_px = raw_dib + (src_row * bm.bmWidth + x) * 4;
+                        u8 *dst_px = pixels  + (y * bm.bmWidth + x) * 4;
+                        dst_px[0] = src_px[2]; // R
+                        dst_px[1] = src_px[1]; // G
+                        dst_px[2] = src_px[0]; // B
+                        dst_px[3] = has_alpha ? src_px[3] : 255; // A
+                    }
+                }
+
+                img.data = pixels;
+                img.width = bm.bmWidth;
+                img.height = bm.bmHeight;
+                img.mipmaps = 1;
+                img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+            } else {
+                free(pixels);
+            }
+        } else {
+            if (pixels) free(pixels);
+        }
+        if (raw_dib) free(raw_dib);
+        ReleaseDC(NULL, hdc);
+    }
+    DeleteObject(hbmp);
+    return img;
+}
+#else
+Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h) {
+    (void)filepath; (void)max_w; (void)max_h;
+    Image img = {0};
+    return img;
+}
+#endif

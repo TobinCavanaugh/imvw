@@ -9,42 +9,49 @@
 extern context_t ctx;
 
 typedef struct tex_load_ctx_t {
-    char *path;
-    Image *out_img;
-    _Atomic u8 *out_loading;
-    _Atomic u8 *out_ready;
+    char path[PATH_MAX];
+    uint64_t request_id;
 } tex_load_ctx_t;
 
-void *internal_tex_load(void *raw_ptr) {
+static inline void *internal_tex_load(void *raw_ptr) {
     tex_load_ctx_t *load_ctx = (tex_load_ctx_t *) raw_ptr;
 
-    // Load into CPU RAM (100% Thread Safe!)
-    *load_ctx->out_img = imvw_load_image_extended(load_ctx->path);
+    // Decode full-resolution image in background thread
+    Image decoded = imvw_load_image_extended(load_ctx->path);
 
-    if(!load_ctx->out_img->width || !load_ctx->out_img->data) {
-        ERR_TEX("Failed to decode image data into RAM");
-        // Create a dummy magenta texture so the program doesn't crash
-        *load_ctx->out_img = GenImageColor(2, 2, MAGENTA);
+    // If a newer image was requested while decoding, discard this result immediately
+    if (load_ctx->request_id != ctx.load_request_id) {
+        if (decoded.data) UnloadImage(decoded);
+        free(load_ctx);
+        return NULL;
     }
 
-    // Signal main thread to upload to GPU
-    *load_ctx->out_ready = 1;
-    *load_ctx->out_loading = 0;
+    if (!decoded.width || !decoded.data) {
+        ERR_TEX("Failed to decode image data into RAM");
+        decoded = GenImageColor(2, 2, MAGENTA);
+    }
+
+    if (ctx.loading_img.data && ctx.loading_img.data != ctx.active_image.data) {
+        UnloadImage(ctx.loading_img);
+    }
+    ctx.loading_img = decoded;
+    ctx.img_ready_to_upload = 1;
+    ctx.tex_loading = 0;
+    ctx.tex_need_load = 0;
 
     free(load_ctx);
     return NULL;
 }
 
-u0 imvw_tex_load() {
-    if (!ctx.tex_need_load || ctx.tex_loading) return;
+static inline u0 imvw_tex_load() {
+    uint64_t req_id = ++ctx.load_request_id;
+    ctx.tex_loading = 1;
 
     tex_load_ctx_t *load_ctx = (tex_load_ctx_t*) malloc(sizeof(tex_load_ctx_t));
-    load_ctx->path = ctx.current_path;
-    load_ctx->out_img = &ctx.loading_img;
-    load_ctx->out_loading = &ctx.tex_loading;
-    load_ctx->out_ready = &ctx.img_ready_to_upload;
-
-    ctx.tex_loading = 1;
+    if (!load_ctx) return;
+    strncpy(load_ctx->path, ctx.current_path, PATH_MAX - 1);
+    load_ctx->path[PATH_MAX - 1] = '\0';
+    load_ctx->request_id = req_id;
 
     pthread_t thr;
     pthread_create(&thr, NULL, internal_tex_load, (void *) load_ctx);

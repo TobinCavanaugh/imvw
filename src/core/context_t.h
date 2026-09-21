@@ -30,6 +30,7 @@ typedef struct {
     _Atomic u8 tex_loading;
     _Atomic u8 tex_need_load;
     _Atomic u8 tex_need_filter;
+    _Atomic uint64_t load_request_id;
 
     _Atomic u8 font_need_reload;      // set after driver upgrade, cleared after reload
     _Atomic u8 shaders_need_reload;    // set after driver upgrade, cleared after reload

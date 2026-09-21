@@ -93,6 +93,8 @@ static void on_driver_upgrade(TRState *s) {
 }
 
 void imvw_init(int argc, char **argv) {
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+
     // ── Resolve relative input path & set working directory to executable folder ──
     // When launched via Windows file association, CWD is the image directory or System32.
     // Converting argv to an absolute path and switching CWD ensures assets (imvw.json, fonts, shaders) are always found.
@@ -337,4 +339,5 @@ void imvw_cleanup(void) {
     }
     ssaa_cleanup();
     CloseWindow();
+    CoUninitialize();
 }
