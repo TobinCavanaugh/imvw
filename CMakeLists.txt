@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.30)
 
 # --- Vcpkg automatic integration ---
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -77,7 +77,8 @@ find_package(LibLZMA REQUIRED)
 find_package(Python REQUIRED COMPONENTS Development)
 
 # --- trlib (local library) ---
-add_subdirectory(../d3d11_bench trlib_build)
+add_subdirectory(tr)
+
 
 file(GLOB_RECURSE PROJECT_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_LIST_DIR}/src/*.c"
@@ -164,16 +165,16 @@ target_compile_definitions(${PROJECT_NAME}
 
 set(ASSETS_DEST "${CMAKE_BINARY_DIR}/bin/assets")
 
-#add_custom_command(
-#        TARGET ${PROJECT_NAME} POST_BUILD
-#        COMMAND ${CMAKE_COMMAND} -E copy_directory
-#        "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-#        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
-#        COMMENT "Copying assets to build directory..."
-#)
+add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+        COMMENT "Copying assets to build directory..."
+)
 
 # Copy trlib shaders (required by tr_raylib's InitWindow)
-get_filename_component(TRLIB_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../d3d11_bench" ABSOLUTE)
+get_filename_component(TRLIB_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tr" ABSOLUTE)
 
 #add_custom_command(
 #        TARGET ${PROJECT_NAME} POST_BUILD
