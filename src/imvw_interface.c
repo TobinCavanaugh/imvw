@@ -537,6 +537,14 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
             }
             return 0;
         }
+        case WM_ACTIVATE: {
+            ctx.focused = (LOWORD(wParam) != WA_INACTIVE) ? 1 : 0;
+            break;
+        }
+        case WM_ACTIVATEAPP: {
+            ctx.focused = wParam ? 1 : 0;
+            break;
+        }
         case WM_SETFOCUS:{
             ctx.focused = 1;
             break;

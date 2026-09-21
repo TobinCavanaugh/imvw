@@ -24,6 +24,7 @@ typedef struct {
 
     Texture2D current_tex;
     Image loading_img;
+    Image active_image;
     _Atomic u8 img_ready_to_upload;
 
     _Atomic u8 tex_loading;

@@ -36,6 +36,12 @@ void imvw_main_loop(void) {
     static u8 skip_actions = 0;
 
     while (!WindowShouldClose()) {
+        // Keep focus state synchronized with OS foreground window
+        HWND hwnd = (HWND) GetWindowHandle();
+        if (hwnd && (GetForegroundWindow() == hwnd || GetActiveWindow() == hwnd)) {
+            ctx.focused = 1;
+        }
+
         // When the window loses focus, render one final frame then enter a
         // low-power idle loop that only pumps messages at 20 Hz.  This drops
         // CPU/GPU usage to ~0% for background windows (useful with many
@@ -137,7 +143,8 @@ void imvw_main_loop(void) {
         profiler_mark("camera lerp");
 
         // If unfocused but not yet asleep, check whether the camera has converged.
-        if (!ctx.focused && !bg_idle) {
+        // Don't enter bg_idle during the initial startup frames (< 30 frames / ~0.5s)
+        if (!ctx.focused && !bg_idle && frame_count > 30) {
             f32 drift =
                 fabs(ctx.real_camera.offset.x  - ctx.target_camera.offset.x) +
                 fabs(ctx.real_camera.offset.y  - ctx.target_camera.offset.y) +
@@ -203,10 +210,14 @@ void imvw_main_loop(void) {
 
             if (ctx.img_ready_to_upload) {
                 if (ctx.current_tex.id != 0) UnloadTexture(ctx.current_tex);
+                if (ctx.active_image.data != NULL && ctx.active_image.data != ctx.loading_img.data) {
+                    UnloadImage(ctx.active_image);
+                }
                 ctx.current_tex = LoadTextureFromImage(ctx.loading_img);
                 GenTextureMipmaps(&ctx.current_tex);
                 SetTextureFilter(ctx.current_tex, settings.texture_filter);
-                UnloadImage(ctx.loading_img);
+                ctx.active_image = ctx.loading_img;
+                ctx.loading_img = (Image){0};
                 ctx.img_ready_to_upload = 0;
                 ctx.tex_need_load = 0;
                 ctx.tex_need_filter = 0;
@@ -219,12 +230,12 @@ void imvw_main_loop(void) {
                 }
             }
 
-            if (ctx.tex_need_filter && !ctx.tex_loading && !ctx.tex_need_load) {
+            if (ctx.tex_need_filter && ctx.current_tex.id != 0) {
                 SetTextureFilter(ctx.current_tex, settings.texture_filter);
                 ctx.tex_need_filter = 0;
             }
 
-            if (ctx.current_tex.id != 0 && !ctx.tex_need_load && !ctx.tex_loading) {
+            if (ctx.current_tex.id != 0) {
                 if (!settings.infinite_tile) {
                     DrawTexture(ctx.current_tex, -I32(round(ctx.current_tex.width / 2.0f)),
                                 -I32(round(ctx.current_tex.height / 2.0f)), WHITE);

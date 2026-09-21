@@ -53,14 +53,15 @@ static void on_driver_upgrade(TRState *s) {
     // 2. Raylib draw pipeline — clean up old WARP resources and re-create on HW device
     draw_reinit(tr_get_device(s), tr_get_context(s));
 
-    // 3. Font — release old WARP font texture, flag for lazy reload from main loop
+    // 3. Font — reload directly onto HW device
     if (ctx.current_font.handle != NULL) {
         UnloadFont(ctx.current_font);
         ctx.current_font = (Font){0};
     }
-    ctx.font_need_reload = 1;
+    imvw_font_load();
+    ctx.font_need_reload = 0;
 
-    // 4. Custom shaders — release old WARP shader COM objects before device is destroyed
+    // 4. Custom shaders — reload directly onto HW device
     if (ctx.shaders_loaded_arr != NULL) {
         for (i32 i = 0; i < ctx.shaders_count; i++) {
             if (ctx.shaders_loaded_arr[i].id != 0)
@@ -74,18 +75,21 @@ static void on_driver_upgrade(TRState *s) {
         ctx.shaders_custom_arr = NULL;
     }
     ctx.shaders_count = 0;
-    ctx.shaders_need_reload = 1;  // re-create on next frame
+    load_custom_shaders();
+    ctx.shaders_need_reload = 0;
 
-    // 5. Current image texture — unload old WARP texture, async decode will re-upload
+    // 5. Current image texture — re-create immediately on HW device in-place
     if (ctx.current_tex.id != 0) {
         UnloadTexture(ctx.current_tex);
         ctx.current_tex = (Texture2D){0};
     }
-    ctx.tex_channels = 0;
-    ctx.tex_fsize = 0;
-    ctx.tex_need_load = 1;  // async decode will re-upload
+    if (ctx.active_image.data != NULL) {
+        ctx.current_tex = LoadTextureFromImage(ctx.active_image);
+        GenTextureMipmaps(&ctx.current_tex);
+        SetTextureFilter(ctx.current_tex, settings.texture_filter);
+    }
 
-    fprintf(stderr, "IMVW|LOG: D3D11 resource upgrade complete\n");
+    fprintf(stderr, "IMVW|LOG: D3D11 resource upgrade complete (seamless swap)\n");
 }
 
 void imvw_init(int argc, char **argv) {
@@ -282,9 +286,11 @@ void imvw_init(int argc, char **argv) {
         }
     }
 
-    // tr_create (inside InitWindow) pumps messages before our subclass is
-    // installed, so WM_SETFOCUS was already consumed by the original proc.
-    ctx.focused = (GetForegroundWindow() == (HWND)GetWindowHandle()) ? 1 : 0;
+    // Ensure newly launched window is focused and active
+    HWND hwnd_main = (HWND) GetWindowHandle();
+    SetForegroundWindow(hwnd_main);
+    SetActiveWindow(hwnd_main);
+    ctx.focused = 1;
 
     {
         HWND hwnd = (HWND) GetWindowHandle();
@@ -310,11 +316,8 @@ void imvw_init(int argc, char **argv) {
     Camera_Home_ResetZoom();
     ctx.real_camera = ctx.target_camera;
 
-    // If the async_loader already decoded the image (into ctx.loading_img),
-    // suppress the separate decode thread that Load() would trigger.
-    if (ld.img_decoded) {
-        ctx.tex_need_load = 0;
-    }
+    // async_loader decodes initial image into ctx.loading_img — prevent redundant Load thread
+    ctx.tex_need_load = 0;
 
     if (settings.python_scripting) {
         python_run_script_func(python_scripts_array, python_scripts_count, "start");
@@ -328,6 +331,10 @@ void imvw_init(int argc, char **argv) {
 }
 
 void imvw_cleanup(void) {
+    if (ctx.active_image.data != NULL) {
+        UnloadImage(ctx.active_image);
+        ctx.active_image = (Image){0};
+    }
     ssaa_cleanup();
     CloseWindow();
 }

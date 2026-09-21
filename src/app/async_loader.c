@@ -156,12 +156,15 @@ void *async_loader(void *arg) {
     // Guard: if the main thread already spawned its own decode (tex_loading),
     // skip to avoid overwriting its result mid-flight.
     if (!ctx.tex_loading && !ctx.img_ready_to_upload) {
+        ctx.tex_loading = 1;
         ctx.loading_img = imvw_load_image_extended(initial_path);
         if (ctx.loading_img.width == 0 || ctx.loading_img.data == NULL) {
             fprintf(stderr, "IMVW|LOADER: failed to decode `%s` \x97 using magenta dummy\n", initial_path);
             ctx.loading_img = GenImageColor(2, 2, MAGENTA);
         }
         ctx.img_ready_to_upload = 1;
+        ctx.tex_need_load = 0;
+        ctx.tex_loading = 0;
     }
     ld->img_decoded = 1;
 
