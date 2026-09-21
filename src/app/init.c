@@ -89,6 +89,16 @@ static void on_driver_upgrade(TRState *s) {
         SetTextureFilter(ctx.current_tex, settings.texture_filter);
     }
 
+    // 6. App icon texture — re-create on HW device
+    if (ctx.app_icon_tex.id != 0) {
+        UnloadTexture(ctx.app_icon_tex);
+        ctx.app_icon_tex = (Texture2D){0};
+    }
+    if (ctx.app_icon_img.data != NULL) {
+        ctx.app_icon_tex = LoadTextureFromImage(ctx.app_icon_img);
+        SetTextureFilter(ctx.app_icon_tex, TEXTURE_FILTER_BILINEAR);
+    }
+
     fprintf(stderr, "IMVW|LOG: D3D11 resource upgrade complete (seamless swap)\n");
 }
 
@@ -300,6 +310,12 @@ void imvw_init(int argc, char **argv) {
         HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(101));
         SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM) hIcon);
         SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM) hIcon);
+
+        ctx.app_icon_img = imvw_load_resource_icon(101, 128, 128);
+        if (ctx.app_icon_img.data != NULL) {
+            ctx.app_icon_tex = LoadTextureFromImage(ctx.app_icon_img);
+            SetTextureFilter(ctx.app_icon_tex, TEXTURE_FILTER_BILINEAR);
+        }
     }
     log_step("Icon Load");
 
@@ -336,6 +352,14 @@ void imvw_cleanup(void) {
     if (ctx.active_image.data != NULL) {
         UnloadImage(ctx.active_image);
         ctx.active_image = (Image){0};
+    }
+    if (ctx.app_icon_tex.id != 0) {
+        UnloadTexture(ctx.app_icon_tex);
+        ctx.app_icon_tex = (Texture2D){0};
+    }
+    if (ctx.app_icon_img.data != NULL) {
+        UnloadImage(ctx.app_icon_img);
+        ctx.app_icon_img = (Image){0};
     }
     ssaa_cleanup();
     CloseWindow();

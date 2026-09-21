@@ -31,4 +31,7 @@ Image imvw_load_image_extended(const char *filepath);
 // Extract fast Windows Shell thumbnail if cached by the OS. Returns zeroed Image on failure.
 Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h);
 
+// Load Win32 icon resource as RGBA Image
+Image imvw_load_resource_icon(int resource_id, int width, int height);
+
 #endif // IMAGE_DECODERS_H

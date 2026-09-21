@@ -292,6 +292,18 @@ void imvw_main_loop(void) {
         }
         EndMode2D();
 
+        // If the full-resolution image has not finished loading, display the imvw resource icon in the center
+        if (!ctx.img_uploaded && ctx.app_icon_tex.id != 0) {
+            int max_dim = min(GetScreenWidth(), GetScreenHeight()) / 3;
+            if (max_dim < 16) max_dim = 16;
+            if (max_dim > 64) max_dim = 64;
+            float scale = (ctx.app_icon_tex.width > 0) ? ((float)max_dim / (float)ctx.app_icon_tex.width) : 1.0f;
+
+            DrawTextureEx(ctx.app_icon_tex,
+                          (Vector2){GetScreenWidth() * 0.5f, GetScreenHeight() * 0.5f},
+                          0.0f, scale, (Color){255, 255, 255, 220});
+        }
+
         profiler_mark("image drawing");
 
         // --- Custom Shader Pass ---

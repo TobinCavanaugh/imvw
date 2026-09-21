@@ -26,6 +26,8 @@ typedef struct {
     Image loading_img;
     Image thumb_img;
     Image active_image;
+    Image app_icon_img;
+    Texture2D app_icon_tex;
     _Atomic u8 img_ready_to_upload;
     _Atomic u8 thumb_ready_to_upload;
     _Atomic u8 img_uploaded;

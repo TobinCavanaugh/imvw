@@ -369,9 +369,79 @@ Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h) {
     DeleteObject(hbmp);
     return img;
 }
+
+Image imvw_load_resource_icon(int resource_id, int width, int height) {
+    Image img = {0};
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    HICON hIcon = (HICON)LoadImageA(hInst, MAKEINTRESOURCEA(resource_id), IMAGE_ICON, width, height, LR_DEFAULTCOLOR);
+    if (!hIcon) hIcon = LoadIconA(hInst, MAKEINTRESOURCEA(resource_id));
+    if (!hIcon) return img;
+
+    ICONINFO icon_info = {0};
+    if (GetIconInfo(hIcon, &icon_info)) {
+        BITMAP bm;
+        if (GetObject(icon_info.hbmColor, sizeof(BITMAP), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+            BITMAPINFO bi = {0};
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = bm.bmWidth;
+            bi.bmiHeader.biHeight = bm.bmHeight;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+
+            HDC hdc = GetDC(NULL);
+            u8 *raw_dib = (u8*)malloc((size_t)bm.bmWidth * bm.bmHeight * 4);
+            u8 *pixels  = (u8*)malloc((size_t)bm.bmWidth * bm.bmHeight * 4);
+            if (raw_dib && pixels) {
+                if (GetDIBits(hdc, icon_info.hbmColor, 0, bm.bmHeight, raw_dib, &bi, DIB_RGB_COLORS)) {
+                    int has_alpha = 0;
+                    for (int i = 0; i < bm.bmWidth * bm.bmHeight; i++) {
+                        if (raw_dib[i * 4 + 3] > 0) {
+                            has_alpha = 1;
+                            break;
+                        }
+                    }
+
+                    for (int y = 0; y < bm.bmHeight; y++) {
+                        int src_row = bm.bmHeight - 1 - y;
+                        for (int x = 0; x < bm.bmWidth; x++) {
+                            u8 *src_px = raw_dib + (src_row * bm.bmWidth + x) * 4;
+                            u8 *dst_px = pixels  + (y * bm.bmWidth + x) * 4;
+                            dst_px[0] = src_px[2]; // R
+                            dst_px[1] = src_px[1]; // G
+                            dst_px[2] = src_px[0]; // B
+                            dst_px[3] = has_alpha ? src_px[3] : 255; // A
+                        }
+                    }
+
+                    img.data = pixels;
+                    img.width = bm.bmWidth;
+                    img.height = bm.bmHeight;
+                    img.mipmaps = 1;
+                    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                } else {
+                    free(pixels);
+                }
+            } else {
+                if (pixels) free(pixels);
+            }
+            if (raw_dib) free(raw_dib);
+            ReleaseDC(NULL, hdc);
+        }
+        if (icon_info.hbmColor) DeleteObject(icon_info.hbmColor);
+        if (icon_info.hbmMask)  DeleteObject(icon_info.hbmMask);
+    }
+    DestroyIcon(hIcon);
+    return img;
+}
 #else
 Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h) {
     (void)filepath; (void)max_w; (void)max_h;
+    Image img = {0};
+    return img;
+}
+Image imvw_load_resource_icon(int resource_id, int width, int height) {
+    (void)resource_id; (void)width; (void)height;
     Image img = {0};
     return img;
 }
