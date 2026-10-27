@@ -112,8 +112,8 @@ void *async_loader(void *arg) {
         strcpy(initial_path, ASSETS_PATH "test2.png");
     }
 
-    int img_w, img_h, img_c;
-    if (stbi_info(initial_path, &img_w, &img_h, &img_c)) {
+    int img_w = 0, img_h = 0, img_c = 0;
+    if (imvw_get_image_info(initial_path, &img_w, &img_h, &img_c) && img_w > 0 && img_h > 0) {
         // Calculate aspect ratio and window size
         f32 aspect = (f32) img_w / (f32) img_h;
         f32 sw = settings.max_window_w;
@@ -162,6 +162,7 @@ void *async_loader(void *arg) {
             fprintf(stderr, "IMVW|LOADER: failed to decode `%s` \x97 using magenta dummy\n", initial_path);
             ctx.loading_img = GenImageColor(2, 2, MAGENTA);
         }
+        ctx.img_req_id = ctx.load_request_id;
         ctx.img_ready_to_upload = 1;
         ctx.tex_need_load = 0;
         ctx.tex_loading = 0;

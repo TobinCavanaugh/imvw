@@ -24,6 +24,9 @@ typedef uint8_t u8;
 // Register built-in decoders (WebP, TIFF, ICO).  Safe to call multiple times.
 void imvw_init_loaders(void);
 
+// Query image dimensions and channels without decoding full image. Returns 1 on success, 0 on failure.
+int imvw_get_image_info(const char *filepath, int *width, int *height, int *channels);
+
 // Try each registered decoder probe in order; if none match, fall back to
 // stb_image.  Returns a zeroed Image on failure.
 Image imvw_load_image_extended(const char *filepath);

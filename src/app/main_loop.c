@@ -228,7 +228,7 @@ void imvw_main_loop(void) {
                     ctx.current_tex = LoadTextureFromImage(thumb);
                     SetTextureFilter(ctx.current_tex, settings.texture_filter);
 
-                    if (orig_w > 0 && orig_h > 0) {
+                    if (orig_w > 1 && orig_h > 1) {
                         ctx.current_tex.width = orig_w;
                         ctx.current_tex.height = orig_h;
                     }

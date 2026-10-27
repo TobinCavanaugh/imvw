@@ -3,8 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include <webp/decode.h>
+#include <webp/demux.h>
 #include <tiffio.h>
 #include "tinyexr.h"
 #include "external/stb_image.h"
@@ -39,16 +43,31 @@ typedef struct {
     const char *name;
     u8 (*probe)(const u8 *data, size_t size);
     Image (*decode)(const u8 *data, size_t size);
+    u8 (*get_info)(const u8 *data, size_t size, int *w, int *h, int *channels);
 } image_decoder_t;
 
 static image_decoder_t *decoders_array = NULL;
 static i32 decoders_count = 0;
 
 static unsigned char *load_file_to_buffer(const char *filepath, size_t *size) {
+    if (!filepath || !filepath[0]) return NULL;
+#ifdef _WIN32
+    wchar_t wpath[MAX_PATH * 2];
+    if (MultiByteToWideChar(CP_UTF8, 0, filepath, -1, wpath, MAX_PATH * 2) == 0) {
+        MultiByteToWideChar(CP_ACP, 0, filepath, -1, wpath, MAX_PATH * 2);
+    }
+    FILE *f = _wfopen(wpath, L"rb");
+#else
     FILE *f = fopen(filepath, "rb");
+#endif
     if (f) {
         fseek(f, 0, SEEK_END);
-        *size = ftell(f);
+        long s = ftell(f);
+        if (s <= 0) {
+            fclose(f);
+            return NULL;
+        }
+        *size = (size_t)s;
         fseek(f, 0, SEEK_SET);
         u8 *file_data = (u8 *)malloc(*size);
         if (file_data) {
@@ -73,16 +92,86 @@ static u8 webp_probe(const u8 *data, size_t size) {
     return (memcmp(data, "RIFF", 4) == 0 && memcmp(data + 8, "WEBP", 4) == 0);
 }
 
+static u8 webp_get_info(const u8 *data, size_t size, int *w, int *h, int *channels) {
+    if (!data || size < 12) return 0;
+    WebPBitstreamFeatures features;
+    if (WebPGetFeatures(data, size, &features) == VP8_STATUS_OK) {
+        if (w) *w = features.width;
+        if (h) *h = features.height;
+        if (channels) *channels = features.has_alpha ? 4 : 3;
+        return 1;
+    }
+    return 0;
+}
+
 static Image webp_decode(const u8 *data, size_t size) {
     Image img = {0};
-    int width, height;
-    uint8_t *webp_data = WebPDecodeRGBA(data, (int)size, &width, &height);
-    if (webp_data) {
-        img.width = width;
-        img.height = height;
-        img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-        img.mipmaps = 1;
-        img.data = webp_data;
+    if (!data || size < 12) return img;
+
+    WebPBitstreamFeatures features;
+    if (WebPGetFeatures(data, size, &features) != VP8_STATUS_OK) {
+        return img;
+    }
+
+    int width = features.width;
+    int height = features.height;
+    if (width <= 0 || height <= 0) return img;
+
+    size_t out_size = (size_t)width * height * 4;
+    uint8_t *pixels = (uint8_t *)malloc(out_size);
+    if (!pixels) return img;
+
+    if (features.has_animation) {
+        WebPData webp_data = { data, size };
+        WebPAnimDecoderOptions dec_options;
+        WebPAnimDecoderOptionsInit(&dec_options);
+        dec_options.color_mode = MODE_RGBA;
+        WebPAnimDecoder *dec = WebPAnimDecoderNew(&webp_data, &dec_options);
+        if (dec) {
+            WebPAnimInfo anim_info;
+            WebPAnimDecoderGetInfo(dec, &anim_info);
+            uint8_t *buf = NULL;
+            int timestamp = 0;
+            if (WebPAnimDecoderGetNext(dec, &buf, &timestamp) && buf) {
+                size_t canvas_size = (size_t)anim_info.canvas_width * anim_info.canvas_height * 4;
+                if (canvas_size == out_size) {
+                    memcpy(pixels, buf, out_size);
+                    img.width = width;
+                    img.height = height;
+                    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                    img.mipmaps = 1;
+                    img.data = pixels;
+                } else {
+                    uint8_t *re_pixels = (uint8_t *)realloc(pixels, canvas_size);
+                    if (re_pixels) {
+                        pixels = re_pixels;
+                        memcpy(pixels, buf, canvas_size);
+                        img.width = (int)anim_info.canvas_width;
+                        img.height = (int)anim_info.canvas_height;
+                        img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                        img.mipmaps = 1;
+                        img.data = pixels;
+                    } else {
+                        free(pixels);
+                    }
+                }
+            } else {
+                free(pixels);
+            }
+            WebPAnimDecoderDelete(dec);
+        } else {
+            free(pixels);
+        }
+    } else {
+        if (WebPDecodeRGBAInto(data, size, pixels, out_size, width * 4) != NULL) {
+            img.width = width;
+            img.height = height;
+            img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+            img.mipmaps = 1;
+            img.data = pixels;
+        } else {
+            free(pixels);
+        }
     }
     return img;
 }
@@ -141,6 +230,24 @@ static Image tiff_decode(const u8 *data, size_t size) {
         TIFFClose(tif);
     }
     return img;
+}
+
+static u8 tiff_get_info(const u8 *data, size_t size, int *w, int *h, int *channels) {
+    tiff_mem_t m = {data, (tsize_t)size, 0};
+    TIFF *tif = TIFFClientOpen("mem", "r", (thandle_t)&m, _tiff_read, _tiff_read, _tiff_seek, _tiff_close, _tiff_size, NULL, NULL);
+    if (tif) {
+        uint32_t width = 0, height = 0;
+        TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width);
+        TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+        TIFFClose(tif);
+        if (width > 0 && height > 0) {
+            if (w) *w = (int)width;
+            if (h) *h = (int)height;
+            if (channels) *channels = 4;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 // --- ICO Decoder ---
@@ -229,12 +336,70 @@ static Image ico_decode(const u8 *data, size_t size) {
     return img;
 }
 
+static u8 ico_get_info(const u8 *data, size_t size, int *w, int *h, int *channels) {
+    if (size < 6) return 0;
+    uint16_t count;
+    memcpy(&count, data + 4, 2);
+    int best_w = 0, best_h = 0, best_area = -1;
+    for (int i = 0; i < count; i++) {
+        size_t entry_offset = 6 + i * 16;
+        if (entry_offset + 16 > size) break;
+        int width = data[entry_offset] == 0 ? 256 : data[entry_offset];
+        int height = data[entry_offset + 1] == 0 ? 256 : data[entry_offset + 1];
+        int area = width * height;
+        if (IMVW_ICO_ENTRY_OVERRIDE >= 0) {
+            if (i == IMVW_ICO_ENTRY_OVERRIDE) { best_w = width; best_h = height; break; }
+        } else if (area > best_area) {
+            best_area = area;
+            best_w = width;
+            best_h = height;
+        }
+    }
+    if (best_w > 0 && best_h > 0) {
+        if (w) *w = best_w;
+        if (h) *h = best_h;
+        if (channels) *channels = 4;
+        return 1;
+    }
+    return 0;
+}
+
 // --- Public API ---
 void imvw_init_loaders() {
     if (decoders_count > 0) return;
-    add_loader((image_decoder_t){"WebP", webp_probe, webp_decode});
-    add_loader((image_decoder_t){"TIFF", tiff_probe, tiff_decode});
-    add_loader((image_decoder_t){"ICO", ico_probe, ico_decode});
+    add_loader((image_decoder_t){"WebP", webp_probe, webp_decode, webp_get_info});
+    add_loader((image_decoder_t){"TIFF", tiff_probe, tiff_decode, tiff_get_info});
+    add_loader((image_decoder_t){"ICO", ico_probe, ico_decode, ico_get_info});
+}
+
+int imvw_get_image_info(const char *filepath, int *width, int *height, int *channels) {
+    if (!filepath || !filepath[0]) return 0;
+    imvw_init_loaders();
+
+    size_t size = 0;
+    u8 *file_data = load_file_to_buffer(filepath, &size);
+    if (!file_data) return 0;
+
+    for (int i = 0; i < decoders_count; i++) {
+        if (decoders_array[i].probe(file_data, size)) {
+            if (decoders_array[i].get_info && decoders_array[i].get_info(file_data, size, width, height, channels)) {
+                free(file_data);
+                return 1;
+            }
+        }
+    }
+
+    int w = 0, h = 0, c = 0;
+    if (stbi_info_from_memory(file_data, (int)size, &w, &h, &c)) {
+        if (width) *width = w;
+        if (height) *height = h;
+        if (channels) *channels = c;
+        free(file_data);
+        return 1;
+    }
+
+    free(file_data);
+    return 0;
 }
 
 Image imvw_load_image_extended(const char *filepath) {
@@ -303,13 +468,10 @@ Image imvw_get_thumbnail(const char *filepath, int max_w, int max_h) {
     SIZE size = { (LONG)max_w, (LONG)max_h };
 
     HBITMAP hbmp = NULL;
-    // SIIGBF_RESIZETOFIT (0x00) shrinks/fits thumbnail preserving aspect ratio
-    hr = factory->lpVtbl->GetImage(factory, size, 0x00 /*SIIGBF_RESIZETOFIT*/, &hbmp);
+    // SIIGBF_THUMBNAILONLY (0x08) ensures we only extract actual image thumbnails, never generic OS file icons
+    hr = factory->lpVtbl->GetImage(factory, size, 0x08 /*SIIGBF_THUMBNAILONLY*/, &hbmp);
     if (FAILED(hr) || !hbmp) {
-        hr = factory->lpVtbl->GetImage(factory, size, 0x01 /*SIIGBF_BIGGERSIZEOK*/, &hbmp);
-    }
-    if (FAILED(hr) || !hbmp) {
-        hr = factory->lpVtbl->GetImage(factory, size, 0x08 /*SIIGBF_THUMBNAILONLY*/, &hbmp);
+        hr = factory->lpVtbl->GetImage(factory, size, 0x09 /*SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY*/, &hbmp);
     }
     factory->lpVtbl->Release(factory);
 

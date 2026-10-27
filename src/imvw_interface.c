@@ -104,7 +104,7 @@ u0 Load(char *path) {
     ctx.img_uploaded = 0;
 
     int w = 0, h = 0, c = 0;
-    stbi_info(path, &w, &h, &c);
+    imvw_get_image_info(path, &w, &h, &c);
 
     ctx.current_tex.width = (w > 0) ? w : 1;
     ctx.current_tex.height = (h > 0) ? h : 1;
@@ -716,7 +716,7 @@ int is_image(const char *filename) {
     int width, height, channels;
 
     // Attempt to read image info
-    if (stbi_info(filename, &width, &height, &channels)) {
+    if (imvw_get_image_info(filename, &width, &height, &channels)) {
         return 1; // It's an image
     }
     return 0; // Not an image

@@ -182,6 +182,8 @@ void imvw_init(int argc, char **argv) {
 
     ShowWindow(GetConsoleWindow(), SW_HIDE);
 
+    imvw_init_loaders();
+
     loader_data_t ld = {argc, argv, 800, 450, 0, 0, 0};
     pthread_t loader_thr;
     pthread_create(&loader_thr, NULL, async_loader, &ld);
@@ -322,18 +324,32 @@ void imvw_init(int argc, char **argv) {
     }
     log_step("Icon Load");
 
+    char argv_path[MAX_PATH] = {0};
     if (argc > 1) {
-        char argv_path[MAX_PATH] = {0};
         for (int i = 1; i < argc; i++) strcat(argv_path, argv[i]);
-        Load(argv_path);
     } else {
-        Load(ASSETS_PATH "test2.png");
+        strcpy(argv_path, ASSETS_PATH "test2.png");
     }
-    log_step("Initial Load (Load call)");
+
+    strcpy(ctx.current_path, argv_path);
+    strcpy(ctx.current_window_title, "imvw | ");
+    strcat(ctx.current_window_title, ctx.current_path);
+    SetWindowTitle(ctx.current_window_title);
+
+    int w = 0, h = 0, c = 0;
+    imvw_get_image_info(argv_path, &w, &h, &c);
+    ctx.current_tex.width = (w > 0) ? w : ld.target_w;
+    ctx.current_tex.height = (h > 0) ? h : ld.target_h;
+    ctx.tex_channels = (c > 0) ? c : 4;
+    struct _stat info;
+    ctx.tex_fsize = (_stat(ctx.current_path, &info) == 0) ? info.st_size : 0;
+
+    log_step("Initial Load setup");
 
     ctx.window_width = ld.target_w;
     ctx.window_height = ld.target_h;
 
+    Camera_FitWindow();
     Camera_Home_ResetZoom();
     ctx.real_camera = ctx.target_camera;
 
