@@ -48,6 +48,9 @@ void imvw_main_loop(void) {
         // CPU/GPU usage to ~0% for background windows (useful with many
         // instances open).
         if (!ctx.focused) {
+            if (bg_idle && (!ctx.img_uploaded || ctx.tex_loading || ctx.tex_need_load || ctx.img_ready_to_upload)) {
+                bg_idle = 0;
+            }
             if (bg_idle) {
                 Sleep(50);
                 tr_pump_messages(tr_get_state());
@@ -144,8 +147,10 @@ void imvw_main_loop(void) {
         profiler_mark("camera lerp");
 
         // If unfocused but not yet asleep, check whether the camera has converged.
-        // Don't enter bg_idle during the initial startup frames (< 30 frames / ~0.5s)
-        if (!ctx.focused && !bg_idle && frame_count > 30) {
+        // Don't enter bg_idle during the initial startup frames (< 30 frames / ~0.5s),
+        // and ONLY enter bg_idle once the full-resolution image is completely loaded and uploaded to GPU!
+        if (!ctx.focused && !bg_idle && frame_count > 30 &&
+            ctx.img_uploaded && !ctx.tex_loading && !ctx.tex_need_load && !ctx.img_ready_to_upload) {
             f32 drift =
                 fabs(ctx.real_camera.offset.x  - ctx.target_camera.offset.x) +
                 fabs(ctx.real_camera.offset.y  - ctx.target_camera.offset.y) +
