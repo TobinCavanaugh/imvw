@@ -99,6 +99,7 @@ add_executable(${PROJECT_NAME}
         src/image/decoders.c
         src/ui/font.c
         src/ui/text.c
+        src/ui/command_palette.c
         src/input/actions.c
         src/input/flut.c
         src/render/shaders.c

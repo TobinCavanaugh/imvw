@@ -118,6 +118,13 @@ static keyboard_key_t keyboard_keys[] = {
         {"RIGHT_CONTROL", KEY_RIGHT_CONTROL},
         {"RIGHT_ALT", KEY_RIGHT_ALT},
         {"RIGHT_SUPER", KEY_RIGHT_SUPER},
+        {"CTRL", KEY_LEFT_CONTROL},
+        {"CONTROL", KEY_LEFT_CONTROL},
+        {"SHIFT", KEY_LEFT_SHIFT},
+        {"ALT", KEY_LEFT_ALT},
+        {"SUPER", KEY_LEFT_SUPER},
+        {"WIN", KEY_LEFT_SUPER},
+        {"CMD", KEY_LEFT_SUPER},
         {"KB_MENU", KEY_KB_MENU},
         {"KP_0", KEY_KP_0},
         {"KP_1", KEY_KP_1},
@@ -147,19 +154,22 @@ static keyboard_key_t keyboard_keys[] = {
 #define ARRAY_LEN(a) (sizeof(a) / sizeof(a[0]))
 
 static i32 GetKeyFromName(char *name) {
+    if (!name) return KEY_NULL;
+    char buf[64] = {0};
     char *pre = "KEY_";
     if (strncmp(pre, name, strlen(pre)) == 0) {
         name += strlen(pre);
     }
 
-    i32 i = 0;
-
-    for (; i < strlen(name); i++) {
-        name[i] = toupper(name[i]);
+    size_t len = strlen(name);
+    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (char)toupper((unsigned char)name[i]);
     }
+    buf[len] = '\0';
 
-    for (i = 0; i < ARRAY_LEN(keyboard_keys); i++) {
-        if (strcmp(name, keyboard_keys[i].name) == 0) {
+    for (size_t i = 0; i < ARRAY_LEN(keyboard_keys); i++) {
+        if (strcmp(buf, keyboard_keys[i].name) == 0) {
             return keyboard_keys[i].key;
         }
     }
@@ -168,19 +178,22 @@ static i32 GetKeyFromName(char *name) {
 }
 
 static MouseButton GetButtonFromName(char *name) {
+    if (!name) return (MouseButton)-1;
+    char buf[64] = {0};
     char *pre = "MOUSE_";
     if (strncmp(pre, name, strlen(pre)) == 0) {
         name += strlen(pre);
     }
 
-    i32 i = 0;
-
-    for (; i < strlen(name); i++) {
-        name[i] = toupper(name[i]);
+    size_t len = strlen(name);
+    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (char)toupper((unsigned char)name[i]);
     }
+    buf[len] = '\0';
 
-    for (i = 0; i < ARRAY_LEN(mouse_buttons); i++) {
-        if (strcmp(name, mouse_buttons[i].name) == 0) {
+    for (size_t i = 0; i < ARRAY_LEN(mouse_buttons); i++) {
+        if (strcmp(buf, mouse_buttons[i].name) == 0) {
             return (MouseButton) mouse_buttons[i].key;
         }
     }

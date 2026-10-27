@@ -10,6 +10,7 @@
 #include "render/shaders.h"
 #include "ui/font.h"
 #include "ui/text.h"
+#include "ui/command_palette.h"
 #include "utils/imvw_time.h"
 #include "imvw_interface.h"
 #include "image/decoders.h"
@@ -278,6 +279,8 @@ void imvw_init(int argc, char **argv) {
     flut_add(Shader_Toggle);
     flut_add(printf);
     flut_add(Window_Toggle_Maximized);
+    flut_add(Toggle_Command_Palette);
+    command_palette_init();
     log_step("flut_add registrations");
 
     ctx.target_camera = ctx.real_camera;

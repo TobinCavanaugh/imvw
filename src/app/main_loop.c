@@ -8,6 +8,7 @@
 #include "render/shaders.h"
 #include "ui/text.h"
 #include "ui/font.h"
+#include "ui/command_palette.h"
 #include "image/tex_loader.h"
 #include "utils/imvw_time.h"
 #include "utils/profiler.h"
@@ -110,11 +111,11 @@ void imvw_main_loop(void) {
             settings.on_top ? SetWindowState(FLAG_WINDOW_TOPMOST) : ClearWindowState(FLAG_WINDOW_TOPMOST);
         }
 
-        if (ctx.focused && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+        if (ctx.focused && !command_palette_is_open() && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
             SendMessage((HWND) GetWindowHandle(), 0x007B /*WM_CONTEXTMENU*/, (WPARAM) GetWindowHandle(), 0);
         }
 
-        if (!ALT_DOWN) {
+        if (!ALT_DOWN && !command_palette_is_open()) {
             f32 wheel = GetMouseWheelMove();
             if (wheel != 0) {
                 Vector2 mwp = GetScreenToWorld2D(GetMousePosition(), ctx.real_camera);
@@ -160,9 +161,11 @@ void imvw_main_loop(void) {
         BeginDrawing();
         profiler_mark("BeginDrawing (poll_input)");
 
+        command_palette_update();
+
         if (skip_actions) {
             skip_actions--;
-        } else {
+        } else if (!command_palette_is_open()) {
             process_actions();
         }
         profiler_mark("process_actions");
@@ -383,6 +386,10 @@ void imvw_main_loop(void) {
         }
 
         profiler_mark("properties text");
+
+        if (command_palette_is_open()) {
+            command_palette_draw();
+        }
 
         EndDrawing();
 

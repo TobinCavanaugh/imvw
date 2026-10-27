@@ -52,6 +52,16 @@
   ],
   "actions": [
     {
+      "func": "Toggle_Command_Palette",
+      "press": "P",
+      "modifier": "KEY_LEFT_CONTROL"
+    },
+    {
+      "func": "Toggle_Command_Palette",
+      "press": "P",
+      "modifier": "KEY_RIGHT_CONTROL"
+    },
+    {
       "func": "exit",
       "press": "W",
       "modifier": "KEY_LEFT_CONTROL"

@@ -11,10 +11,10 @@ i32 actions_count = 0;
 
 // Pre-fetch modifier key states once per frame so per-action checks use the
 // cached values instead of calling IsKeyDown (GetAsyncKeyState) repeatedly.
-#define MOD_CTRL  (IsKeyDown(KEY_LEFT_CONTROL)  || IsKeyDown(KEY_RIGHT_CONTROL))
-#define MOD_SHIFT (IsKeyDown(KEY_LEFT_SHIFT)    || IsKeyDown(KEY_RIGHT_SHIFT))
-#define MOD_ALT   (IsKeyDown(KEY_LEFT_ALT)      || IsKeyDown(KEY_RIGHT_ALT))
-#define MOD_SUPER (IsKeyDown(KEY_LEFT_SUPER)    || IsKeyDown(KEY_RIGHT_SUPER))
+#define MOD_CTRL  (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) || (GetKeyState(VK_CONTROL) & 0x8000) != 0 || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
+#define MOD_SHIFT (IsKeyDown(KEY_LEFT_SHIFT)   || IsKeyDown(KEY_RIGHT_SHIFT)   || (GetKeyState(VK_SHIFT) & 0x8000) != 0   || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0)
+#define MOD_ALT   (IsKeyDown(KEY_LEFT_ALT)     || IsKeyDown(KEY_RIGHT_ALT)     || (GetKeyState(VK_MENU) & 0x8000) != 0    || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+#define MOD_SUPER (IsKeyDown(KEY_LEFT_SUPER)   || IsKeyDown(KEY_RIGHT_SUPER)   || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0)
 #define MOD_ANY   (MOD_CTRL || MOD_SHIFT || MOD_ALT || MOD_SUPER)
 
 void process_actions(void) {

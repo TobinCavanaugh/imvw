@@ -7,6 +7,7 @@
 #include "core/platform/dirent_win32.h"
 #include "image/decoders.h"
 #include "image/tex_loader.h"
+#include "ui/command_palette.h"
 #include <external/stb_image.h>
 #include <commdlg.h>
 
@@ -566,6 +567,14 @@ LRESULT CALLBACK NewWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
         }
         case WM_KILLFOCUS:{
             ctx.focused = 0;
+            break;
+        }
+
+        case WM_CHAR: {
+            if (command_palette_is_open()) {
+                command_palette_on_char((char) wParam);
+                return 0;
+            }
             break;
         }
 

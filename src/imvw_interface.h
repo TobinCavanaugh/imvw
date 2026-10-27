@@ -97,4 +97,6 @@ u0 Camera_PanY(f32* y);
 
 u0 Window_Toggle_Maximized();
 
+u0 Toggle_Command_Palette(void *arg);
+
 #endif //IMVW_INTERFACE_H
