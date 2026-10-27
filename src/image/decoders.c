@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -202,9 +203,171 @@ static toff_t _tiff_seek(thandle_t st, toff_t off, int whence) {
 static int _tiff_close(thandle_t st) { (void)st; return 0; }
 static toff_t _tiff_size(thandle_t st) { return (toff_t)((tiff_mem_t *)st)->size; }
 
+static void dummy_tiff_handler(const char *module, const char *fmt, va_list ap) {
+    (void)module; (void)fmt; (void)ap;
+}
+
 static u8 tiff_probe(const u8 *data, size_t size) {
     if (size < 4) return 0;
     return (memcmp(data, "II\x2a\x00", 4) == 0 || memcmp(data, "MM\x00\x2a", 4) == 0);
+}
+
+static Image tiff_decode_custom(TIFF *tif, uint32_t w, uint32_t h) {
+    Image img = {0};
+    uint16_t bits = 8, samples = 1, sample_format = SAMPLEFORMAT_UINT;
+    TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits);
+    TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples);
+    TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
+    if (samples == 0) samples = 1;
+    if (bits == 0) bits = 8;
+    int is_tiled = TIFFIsTiled(tif);
+
+    uint8_t *rgba = (uint8_t *)malloc((size_t)w * h * 4);
+    if (!rgba) return img;
+
+    if (bits == 32 && sample_format == SAMPLEFORMAT_IEEEFP) {
+        if (samples == 1) {
+            float *raw_data = (float *)malloc((size_t)w * h * sizeof(float));
+            if (!raw_data) { free(rgba); return img; }
+
+            float min_val = 1e30f, max_val = -1e30f;
+            if (is_tiled) {
+                uint32_t tile_w = 0, tile_h = 0;
+                TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tile_w);
+                TIFFGetField(tif, TIFFTAG_TILELENGTH, &tile_h);
+                tsize_t tile_size = TIFFTileSize(tif);
+                float *tile_buf = (float *)_TIFFmalloc(tile_size);
+                if (!tile_buf) { free(raw_data); free(rgba); return img; }
+
+                for (uint32_t y = 0; y < h; y += tile_h) {
+                    for (uint32_t x = 0; x < w; x += tile_w) {
+                        if (TIFFReadTile(tif, tile_buf, x, y, 0, 0) < 0) continue;
+                        for (uint32_t py = 0; py < tile_h && (y + py) < h; py++) {
+                            uint32_t dst_y = y + py;
+                            for (uint32_t px = 0; px < tile_w && (x + px) < w; px++) {
+                                uint32_t dst_x = x + px;
+                                float v = tile_buf[py * tile_w + px];
+                                raw_data[(size_t)dst_y * w + dst_x] = v;
+                                if (isnan(v) || isinf(v) || v <= -10000.0f) continue;
+                                if (v < min_val) min_val = v;
+                                if (v > max_val) max_val = v;
+                            }
+                        }
+                    }
+                }
+                _TIFFfree(tile_buf);
+            } else {
+                tsize_t scan_size = TIFFScanlineSize(tif);
+                float *scan_buf = (float *)_TIFFmalloc(scan_size);
+                if (!scan_buf) { free(raw_data); free(rgba); return img; }
+
+                for (uint32_t y = 0; y < h; y++) {
+                    if (TIFFReadScanline(tif, scan_buf, y, 0) < 0) continue;
+                    for (uint32_t x = 0; x < w; x++) {
+                        float v = scan_buf[x];
+                        raw_data[(size_t)y * w + x] = v;
+                        if (isnan(v) || isinf(v) || v <= -10000.0f) continue;
+                        if (v < min_val) min_val = v;
+                        if (v > max_val) max_val = v;
+                    }
+                }
+                _TIFFfree(scan_buf);
+            }
+
+            float range = (max_val > min_val) ? (max_val - min_val) : 1.0f;
+            float inv_range = 255.0f / range;
+            size_t total = (size_t)w * h;
+            for (size_t i = 0; i < total; i++) {
+                float v = raw_data[i];
+                size_t idx = i * 4;
+                if (isnan(v) || isinf(v) || v <= -10000.0f) {
+                    rgba[idx + 0] = 0;
+                    rgba[idx + 1] = 0;
+                    rgba[idx + 2] = 0;
+                    rgba[idx + 3] = 0;
+                } else {
+                    float norm = (v - min_val) * inv_range;
+                    uint8_t b = norm < 0.0f ? 0 : (norm > 255.0f ? 255 : (uint8_t)norm);
+                    rgba[idx + 0] = b;
+                    rgba[idx + 1] = b;
+                    rgba[idx + 2] = b;
+                    rgba[idx + 3] = 255;
+                }
+            }
+            free(raw_data);
+
+            img.width = (int)w;
+            img.height = (int)h;
+            img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+            img.mipmaps = 1;
+            img.data = rgba;
+            return img;
+        }
+    } else if (bits == 16) {
+        if (samples == 1) {
+            if (is_tiled) {
+                uint32_t tile_w = 0, tile_h = 0;
+                TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tile_w);
+                TIFFGetField(tif, TIFFTAG_TILELENGTH, &tile_h);
+                tsize_t tile_size = TIFFTileSize(tif);
+                uint16_t *tile_buf = (uint16_t *)_TIFFmalloc(tile_size);
+                if (tile_buf) {
+                    for (uint32_t y = 0; y < h; y += tile_h) {
+                        for (uint32_t x = 0; x < w; x += tile_w) {
+                            if (TIFFReadTile(tif, tile_buf, x, y, 0, 0) < 0) continue;
+                            for (uint32_t py = 0; py < tile_h && (y + py) < h; py++) {
+                                uint32_t dst_y = y + py;
+                                for (uint32_t px = 0; px < tile_w && (x + px) < w; px++) {
+                                    uint32_t dst_x = x + px;
+                                    uint16_t v = tile_buf[py * tile_w + px];
+                                    uint8_t b = (uint8_t)(v >> 8);
+                                    size_t idx = ((size_t)dst_y * w + dst_x) * 4;
+                                    rgba[idx + 0] = b;
+                                    rgba[idx + 1] = b;
+                                    rgba[idx + 2] = b;
+                                    rgba[idx + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                    _TIFFfree(tile_buf);
+                    img.width = (int)w;
+                    img.height = (int)h;
+                    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                    img.mipmaps = 1;
+                    img.data = rgba;
+                    return img;
+                }
+            } else {
+                tsize_t scan_size = TIFFScanlineSize(tif);
+                uint16_t *scan_buf = (uint16_t *)_TIFFmalloc(scan_size);
+                if (scan_buf) {
+                    for (uint32_t y = 0; y < h; y++) {
+                        if (TIFFReadScanline(tif, scan_buf, y, 0) < 0) continue;
+                        for (uint32_t x = 0; x < w; x++) {
+                            uint16_t v = scan_buf[x];
+                            uint8_t b = (uint8_t)(v >> 8);
+                            size_t idx = ((size_t)y * w + x) * 4;
+                            rgba[idx + 0] = b;
+                            rgba[idx + 1] = b;
+                            rgba[idx + 2] = b;
+                            rgba[idx + 3] = 255;
+                        }
+                    }
+                    _TIFFfree(scan_buf);
+                    img.width = (int)w;
+                    img.height = (int)h;
+                    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                    img.mipmaps = 1;
+                    img.data = rgba;
+                    return img;
+                }
+            }
+        }
+    }
+
+    free(rgba);
+    return img;
 }
 
 static Image tiff_decode(const u8 *data, size_t size) {
@@ -212,21 +375,30 @@ static Image tiff_decode(const u8 *data, size_t size) {
     tiff_mem_t m = {data, (tsize_t)size, 0};
     TIFF *tif = TIFFClientOpen("mem", "r", (thandle_t)&m, _tiff_read, _tiff_read, _tiff_seek, _tiff_close, _tiff_size, NULL, NULL);
     if (tif) {
+        TIFFErrorHandler prev_warning = TIFFSetWarningHandler(dummy_tiff_handler);
+        TIFFErrorHandler prev_error = TIFFSetErrorHandler(dummy_tiff_handler);
+
         uint32_t w, h;
         TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w);
         TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h);
-        uint32_t *raster = (uint32_t *)_TIFFmalloc(w * h * sizeof(uint32_t));
-        if (raster) {
-            if (TIFFReadRGBAImageOriented(tif, w, h, raster, ORIENTATION_TOPLEFT, 0)) {
-                img.width = (int)w;
-                img.height = (int)h;
-                img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-                img.mipmaps = 1;
-                img.data = malloc(w * h * 4);
-                if (img.data) memcpy(img.data, raster, w * h * 4);
+        if (w > 0 && h > 0) {
+            uint32_t *raster = (uint32_t *)malloc((size_t)w * h * 4);
+            if (raster) {
+                if (TIFFReadRGBAImageOriented(tif, w, h, raster, ORIENTATION_TOPLEFT, 0)) {
+                    img.width = (int)w;
+                    img.height = (int)h;
+                    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+                    img.mipmaps = 1;
+                    img.data = raster;
+                } else {
+                    free(raster);
+                    img = tiff_decode_custom(tif, w, h);
+                }
             }
-            _TIFFfree(raster);
         }
+
+        TIFFSetWarningHandler(prev_warning);
+        TIFFSetErrorHandler(prev_error);
         TIFFClose(tif);
     }
     return img;
@@ -234,18 +406,25 @@ static Image tiff_decode(const u8 *data, size_t size) {
 
 static u8 tiff_get_info(const u8 *data, size_t size, int *w, int *h, int *channels) {
     tiff_mem_t m = {data, (tsize_t)size, 0};
+    TIFFErrorHandler prev_warning = TIFFSetWarningHandler(dummy_tiff_handler);
+    TIFFErrorHandler prev_error = TIFFSetErrorHandler(dummy_tiff_handler);
     TIFF *tif = TIFFClientOpen("mem", "r", (thandle_t)&m, _tiff_read, _tiff_read, _tiff_seek, _tiff_close, _tiff_size, NULL, NULL);
     if (tif) {
         uint32_t width = 0, height = 0;
         TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width);
         TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
         TIFFClose(tif);
+        TIFFSetWarningHandler(prev_warning);
+        TIFFSetErrorHandler(prev_error);
         if (width > 0 && height > 0) {
             if (w) *w = (int)width;
             if (h) *h = (int)height;
             if (channels) *channels = 4;
             return 1;
         }
+    } else {
+        TIFFSetWarningHandler(prev_warning);
+        TIFFSetErrorHandler(prev_error);
     }
     return 0;
 }
